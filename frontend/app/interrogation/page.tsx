@@ -20,16 +20,18 @@ import {
 import Link from "next/link";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import ThemeToggle from "../components/ThemeToggle";
+import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
 
 export default function InterrogationPage() {
   const router = useRouter();
   const [hasStarted, setHasStarted] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [transcript, setTranscript] = useState("Click 'Initiate Interrogation Protocol' to begin...");
+  const [transcript, setTranscript] = useState("Click 'Start interview' to begin...");
   const [userTranscript, setUserTranscript] = useState("");
+  const { start: startMicrophone, stop: finishRecording, isListening, isConnecting, isFinishing, error: microphoneError } = useSpeechRecorder(setUserTranscript);
   const [chatHistory, setChatHistory] = useState<{ type: string; text: string }[]>([]);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
-  
+
   // Turn Management State
   const [currentTurn, setCurrentTurn] = useState(0);
   const [turnQuestions, setTurnQuestions] = useState<{ [key: number]: string }>({});
@@ -48,8 +50,6 @@ export default function InterrogationPage() {
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
-  const deepgramSocket = useRef<WebSocket | null>(null);
   const audioPlayer = useRef<HTMLAudioElement | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const typewriterTimer = useRef<NodeJS.Timeout | null>(null);
@@ -60,7 +60,7 @@ export default function InterrogationPage() {
     try {
       const storedData = sessionStorage.getItem("sparta_roast_data");
       const storedResume = sessionStorage.getItem("sparta_resume_text");
-      
+
       if (!storedData || !storedResume) {
         console.warn("No resume data found, redirecting to home...");
         window.location.href = "/";
@@ -81,6 +81,8 @@ export default function InterrogationPage() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || isConnecting || isFinishing) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable=true]")) return;
       if (e.code === "Space" && hasStarted && !showReport) {
         e.preventDefault();
         if (isListening) {
@@ -93,7 +95,7 @@ export default function InterrogationPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [hasStarted, showReport, isListening, currentTurn, userTranscript]);
+  }, [hasStarted, showReport, isListening, isConnecting, isFinishing, currentTurn, userTranscript]);
 
   const handleStartInterrogation = () => {
     setHasStarted(true);
@@ -106,66 +108,12 @@ export default function InterrogationPage() {
     triggerAiResponse(initPrompt, 0);
   };
 
-  const startMicrophone = async () => {
-    try {
-      const tokenRes = await fetch("/api/deepgram");
-      const tokenData = await tokenRes.json();
-      if (!tokenData.key) throw new Error("No Deepgram key returned");
-
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      deepgramSocket.current = new WebSocket(
-        "wss://api.deepgram.com/v1/listen?model=nova-2&interim_results=true&smart_format=true",
-        ["token", tokenData.key]
-      );
-
-      deepgramSocket.current.onopen = () => {
-        mediaRecorder.current = new MediaRecorder(stream, { mimeType: "audio/webm" });
-
-        mediaRecorder.current.ondataavailable = (event) => {
-          if (event.data.size > 0 && deepgramSocket.current?.readyState === 1) {
-            deepgramSocket.current.send(event.data);
-          }
-        };
-
-        mediaRecorder.current.start(250);
-        setIsListening(true);
-        setUserTranscript("");
-      };
-
-      let fullTranscript = "";
-      deepgramSocket.current.onmessage = (message) => {
-        const received = JSON.parse(message.data);
-        const transcriptText = received.channel?.alternatives[0]?.transcript;
-        if (transcriptText) {
-          if (received.is_final) {
-            fullTranscript += transcriptText + " ";
-            setUserTranscript(fullTranscript);
-          } else {
-            setUserTranscript(fullTranscript + transcriptText);
-          }
-        }
-      };
-    } catch (err) {
-      console.error("Microphone error:", err);
-    }
-  };
-
-  const stopMicrophone = () => {
-    if (mediaRecorder.current) {
-      mediaRecorder.current.stop();
-      mediaRecorder.current.stream.getTracks().forEach((track) => track.stop());
-    }
-    if (deepgramSocket.current) {
-      deepgramSocket.current.close();
-    }
-    setIsListening(false);
-
-    if (userTranscript.trim()) {
-      // Turn advances ONLY after the candidate finishes speaking and sends their defense
+  const stopMicrophone = async () => {
+    const answer = await finishRecording();
+    if (answer && !isInterrogationEndedRef.current && !isConclusionReachedRef.current) {
       const nextTurn = currentTurn + 1;
       setCurrentTurn(nextTurn);
-      triggerAiResponse(userTranscript, nextTurn);
+      triggerAiResponse(answer, nextTurn);
     }
   };
 
@@ -205,7 +153,7 @@ export default function InterrogationPage() {
 
       let extractedTopic = `Turn ${targetTurn}`;
       let cleanText = rawReplyText.toString().trim();
-      
+
       const topicMatch = cleanText.match(/\[TOPIC:\s*(.*?)\]/i);
       if (topicMatch) {
         extractedTopic = topicMatch[1].trim();
@@ -213,7 +161,7 @@ export default function InterrogationPage() {
       }
 
       cleanText = cleanText.replace(/[*#`_\[\]]/g, "").trim();
-      
+
       if (extractedTopic.toLowerCase().includes("conclusion") || cleanText.toLowerCase().includes("thank you for participating")) {
         isConclusionReachedRef.current = true;
       }
@@ -353,6 +301,7 @@ export default function InterrogationPage() {
     });
   };
   const handleFinishInterrogation = async () => {
+    if (isInterrogationEndedRef.current) return;
     // Set flag first to block all in-flight async TTS play calls
     isInterrogationEndedRef.current = true;
 
@@ -367,12 +316,12 @@ export default function InterrogationPage() {
       clearInterval(typewriterTimer.current);
     }
     setIsAiSpeaking(false);
-    stopMicrophone();
+    const finalAnswer = await finishRecording();
 
     setIsGeneratingReport(true);
     setShowReport(true);
 
-    const fullVoiceTranscript = chatHistory
+    const fullVoiceTranscript = [...chatHistory, ...(finalAnswer ? [{ type: "user", text: finalAnswer }] : [])]
       .map((h) => `${h.type === "user" ? "Candidate" : "Agent"}: ${h.text}`)
       .join("\n");
 
@@ -409,7 +358,7 @@ export default function InterrogationPage() {
 
   if (!roastData || !rawResumeText) {
     return (
-      <div className="min-h-screen bg-black flex flex-col items-center justify-center font-mono text-red-500">
+      <div className="min-h-screen bg-surface flex flex-col items-center justify-center font-sans text-danger">
         <Activity className="animate-pulse mb-4" size={32} />
         <p>Initializing Secure Connection...</p>
       </div>
@@ -417,58 +366,59 @@ export default function InterrogationPage() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col font-sans">
+    <div className={`interview-page min-h-screen bg-canvas text-ink flex flex-col font-sans ${showReport ? "" : "lg:h-dvh lg:overflow-hidden"}`}>
       <audio ref={audioPlayer} className="hidden" />
 
       {/* Top Header */}
-      <header className="border-b border-neutral-900 bg-neutral-950/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-40">
-        <div className="flex items-center gap-4">
+      <header className="shrink-0 border-b-2 border-line bg-surface px-5 sm:px-8 py-5 flex flex-wrap gap-4 items-center justify-between sticky top-0 z-40">
+        <div className="flex flex-wrap items-center gap-4">
           <Link
             href="/"
-            className="flex items-center gap-2 text-neutral-400 hover:text-white transition-colors text-xs font-mono"
+            className="flex items-center gap-2 text-muted hover:text-ink transition-colors text-xs font-sans"
           >
             <ArrowLeft size={16} /> Return to Dashboard
           </Link>
-          <div className="h-4 w-px bg-neutral-800" />
+          <div className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
-            <Activity className="text-red-500 animate-pulse" size={18} />
-            <h1 className="font-bold tracking-widest text-sm uppercase">S.P.A.R.T.A. Voice Terminal</h1>
+            <Activity className="text-brand" size={18} />
+            <h1 className="font-mono font-bold tracking-wide text-xs uppercase">Interview practice</h1>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="px-3 py-1 bg-red-950/40 border border-red-800/40 text-red-400 text-xs font-mono rounded-full">
-            {showReport ? "PHASE 2: BATTLE REPORT" : (roastData?.has_github ? "CODE GROUNDED INTERVIEW" : "RESUME GROUNDED INTERVIEW")}
+          <ThemeToggle />
+          <span className="px-3 py-1.5 bg-violet-soft border border-line text-violet text-xs font-mono rounded-none">
+            {showReport ? "INTERVIEW FEEDBACK" : (roastData?.has_github ? "CODE-BASED INTERVIEW" : "RESUME-BASED INTERVIEW")}
           </span>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col p-6 max-w-7xl w-full mx-auto relative">
+      <main className={`flex-1 min-h-0 flex flex-col p-6 max-w-7xl w-full mx-auto relative ${showReport ? "" : "lg:overflow-hidden"}`}>
         {/* User Interaction Start Modal (Fixes Browser Audio Autoplay Blocking) */}
         {!hasStarted && !showReport && (
-          <div className="absolute inset-0 z-30 bg-black/90 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="absolute inset-0 z-30 bg-canvas/95  flex items-center justify-center p-6">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-neutral-950 border border-neutral-800 rounded-2xl p-8 max-w-lg w-full text-center space-y-6 shadow-2xl"
+              className="bg-surface border border-line rounded-xl p-8 max-w-lg w-full text-center space-y-6 shadow-none"
             >
-              <div className="w-16 h-16 rounded-full bg-red-950/60 border border-red-800/60 text-red-500 flex items-center justify-center mx-auto">
+              <div className="w-16 h-16 rounded-none bg-violet-soft border border-line text-violet flex items-center justify-center mx-auto">
                 <Activity size={32} />
               </div>
               <div className="space-y-2">
-                <h2 className="text-xl font-bold text-white uppercase tracking-widest">
-                  Live Technical Interrogation
+                <h2 className="text-2xl font-bold text-ink tracking-tight">
+                  Practise your technical interview
                 </h2>
-                <p className="text-sm text-neutral-400 leading-relaxed">
-                  S.P.A.R.T.A. will stress-test your technical depth across 4 turns. Speak clearly into your microphone to defend your claims.
+                <p className="text-sm text-muted leading-relaxed">
+                  Explain your experience in your own words. Use your microphone to answer each question, then review the feedback.
                 </p>
               </div>
               <button
                 onClick={handleStartInterrogation}
-                className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 text-sm uppercase tracking-wider shadow-lg cursor-pointer"
+                className="w-full py-4 bg-accent hover:bg-accent-hover text-on-accent font-bold rounded-none transition-all flex items-center justify-center gap-2 text-sm shadow-none cursor-pointer"
               >
-                <Play size={18} /> Initiate Interrogation Protocol
+                <Play size={18} /> Start interview
               </button>
             </motion.div>
           </div>
@@ -476,17 +426,17 @@ export default function InterrogationPage() {
 
         {!showReport ? (
           /* Live Interrogation Terminal View */
-          <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-[750px] lg:h-[750px] lg:max-h-[85vh] bg-black border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-6 bg-surface border border-line rounded-2xl shadow-none overflow-hidden">
             {/* Left Column: Context & Structured Topic Progression Panel */}
-            <div className="lg:w-1/3 border-b lg:border-b-0 lg:border-r border-neutral-900 p-6 bg-neutral-950/50 flex flex-col gap-6">
+            <div className="h-[35dvh] min-h-[180px] lg:h-auto lg:min-h-0 lg:w-1/3 overflow-hidden border-b lg:border-b-0 lg:border-r border-line p-6 bg-tint flex flex-col gap-6">
 
               {/* Structured Topic Progression Panel */}
-              <div className="flex-1 bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 space-y-4 flex flex-col min-h-0">
-                <h4 className="text-xs font-mono text-neutral-400 uppercase tracking-widest border-b border-neutral-800 pb-2">
+              <div className="flex-1 min-h-0 overflow-hidden bg-tint border border-line rounded-none p-5 space-y-4 flex flex-col">
+                <h4 className="shrink-0 text-xs font-mono text-muted uppercase tracking-wide border-b border-line pb-2">
                   Topic Progression
                 </h4>
 
-                <div id="topic-progression-container" className="flex-1 space-y-3 text-xs overflow-y-auto pr-2 custom-scrollbar relative">
+                <div id="topic-progression-container" tabIndex={0} aria-label="Interview questions" className="flex-1 min-h-0 space-y-3 text-xs overflow-y-auto overscroll-contain pr-2 custom-scrollbar relative">
                   {Array.from({ length: currentTurn + 1 }).map((_, turnNum) => {
                     const questionText = turnQuestions[turnNum];
                     const label = turnTopics[turnNum] || `Turn ${turnNum}`;
@@ -507,20 +457,20 @@ export default function InterrogationPage() {
                             }
                           }
                         }}
-                        className={`p-3 rounded-lg border transition-all ${
+                        className={`p-3 rounded-none border transition-all ${
                           isCurrent
-                            ? "bg-red-950/20 border-red-900/60 text-white"
+                            ? "bg-violet-soft border-violet text-ink"
                             : isCompleted
-                            ? "bg-neutral-950/60 border-neutral-800 text-neutral-300"
-                            : "bg-neutral-950/20 border-neutral-900 text-neutral-600"
+                            ? "bg-tint border-line text-copy"
+                            : "bg-tint border-line text-muted"
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
-                          <span className={`font-mono font-bold ${isCurrent ? "text-red-400" : "text-neutral-500"}`}>
+                          <span className={`font-sans font-bold ${isCurrent ? "text-brand" : "text-muted"}`}>
                             {label}
                           </span>
                           {isCurrent && isAiSpeaking && (
-                            <span className="flex items-center gap-1 text-[10px] text-red-400 font-mono animate-pulse">
+                            <span className="flex items-center gap-1 text-[10px] text-danger font-sans animate-pulse">
                               <Loader2 size={10} className="animate-spin" /> Asking...
                             </span>
                           )}
@@ -531,8 +481,8 @@ export default function InterrogationPage() {
                             "{questionText}"
                           </p>
                         ) : (
-                          <div className="flex items-center gap-2 py-1 text-neutral-600 font-mono">
-                            <span className="inline-block w-2 h-2 rounded-full bg-neutral-800 animate-pulse" />
+                          <div className="flex items-center gap-2 py-1 text-muted font-sans">
+                            <span className="inline-block w-2 h-2 rounded-none bg-line animate-pulse" />
                             <span>{isCurrent ? "Processing..." : "Awaiting..."}</span>
                           </div>
                         )}
@@ -544,8 +494,8 @@ export default function InterrogationPage() {
             </div>
 
             {/* Right Column: Live Spoken Transcript */}
-            <div className="flex-1 p-6 flex flex-col relative bg-black min-w-0 min-h-[500px]">
-              <div ref={scrollRef} className="flex-1 overflow-y-auto pb-12 space-y-6">
+            <div className="flex-1 p-6 flex flex-col relative bg-surface min-w-0 min-h-[500px] lg:min-h-0">
+              <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto pb-12 space-y-6">
                 <AnimatePresence>
                   {userTranscript && (
                     <motion.div
@@ -553,11 +503,11 @@ export default function InterrogationPage() {
                       animate={{ opacity: 1, y: 0 }}
                       className="flex items-start gap-4 self-end justify-end"
                     >
-                      <div className="text-lg text-neutral-300 font-medium leading-relaxed max-w-xl text-right bg-neutral-900 border border-neutral-800 rounded-xl p-4">
+                      <div className="text-base text-copy font-normal leading-relaxed max-w-xl text-right bg-tint border border-line rounded-none p-4">
                         {userTranscript}
-                        {isListening && <span className="inline-block w-2 h-4 bg-neutral-500 ml-2 animate-pulse" />}
+                        {isListening && <span className="inline-block w-2 h-4 bg-muted ml-2 animate-pulse" />}
                       </div>
-                      <div className="w-8 h-8 rounded bg-neutral-800 text-neutral-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                      <div className="w-8 h-8 rounded-none bg-tint border border-line text-muted flex items-center justify-center font-bold text-xs flex-shrink-0">
                         YOU
                       </div>
                     </motion.div>
@@ -565,76 +515,81 @@ export default function InterrogationPage() {
                 </AnimatePresence>
 
                 <div className="flex items-start gap-4">
-                  <div className="w-8 h-8 rounded bg-white text-black flex items-center justify-center font-bold text-xs flex-shrink-0">
+                  <div className="w-8 h-8 rounded-none bg-surface text-ink flex items-center justify-center font-bold text-xs flex-shrink-0">
                     AI
                   </div>
-                  <div className="text-xl sm:text-2xl text-white font-light leading-relaxed max-w-2xl bg-neutral-950 border border-neutral-900 rounded-xl p-5 min-h-[90px] flex items-center">
+                  <div className="text-lg sm:text-xl text-ink font-normal leading-relaxed max-w-2xl bg-surface border border-line rounded-none p-5 min-h-[90px] flex items-center">
                     {transcript ? (
                       <div>
                         {transcript}
                         {isAiSpeaking && (
-                          <span className="inline-block w-3 h-6 bg-red-500 ml-2 animate-pulse align-middle rounded-none shadow-[0_0_10px_rgba(239,68,68,0.7)]" />
+                          <span className="inline-block w-2 h-5 bg-brand ml-2 animate-pulse align-middle rounded-none shadow-none" />
                         )}
                       </div>
                     ) : (
                       <div className="flex items-center gap-3">
-                        <span className="w-3 h-6 bg-red-500 animate-pulse rounded-none inline-block align-middle shadow-[0_0_10px_rgba(239,68,68,0.7)]" />
+                        <span className="w-2 h-5 bg-brand animate-pulse rounded-none inline-block align-middle shadow-none" />
                       </div>
                     )}
                   </div>
                 </div>
               </div>
 
+              {microphoneError && <p role="alert" className="shrink-0 mb-3 border border-danger/30 bg-danger-soft p-3 text-sm text-danger">{microphoneError}</p>}
+              <p role="status" className="shrink-0 mb-3 text-center text-xs text-muted">
+                {isConnecting ? "Connecting microphone…" : isFinishing ? "Finishing transcription…" : isListening ? "Microphone is recording. Speak, then stop to send your answer." : "Tap to speak and allow microphone access when asked."}
+              </p>
               {/* Bottom Controls */}
-              <div className="pt-4 border-t border-neutral-900 flex items-center justify-center gap-4">
+              <div className="shrink-0 pt-4 border-t border-line flex flex-wrap items-center justify-center gap-3">
                 <button
                   onClick={isListening ? stopMicrophone : startMicrophone}
-                  className={`px-6 py-3.5 rounded-full font-bold transition-all flex items-center gap-2 border cursor-pointer ${
+                  disabled={isConnecting || isFinishing}
+                  className={`px-6 py-3.5 rounded-none font-bold transition-all flex items-center gap-2 border cursor-pointer disabled:opacity-50 ${
                     isListening
-                      ? "bg-red-500/20 border-red-500 text-red-400 animate-pulse shadow-[0_0_20px_rgba(239,68,68,0.3)]"
-                      : "bg-neutral-900 border-neutral-800 text-white hover:bg-neutral-800"
+                      ? "bg-danger-soft border-danger text-danger animate-pulse shadow-none"
+                      : "bg-accent border-line text-on-accent hover:bg-accent-hover"
                   }`}
                 >
                   {isListening ? <MicOff size={18} /> : <Mic size={18} />}
-                  {isListening ? "Stop Speaking & Send (Space)" : "Tap to Speak (Space)"}
+                  {isConnecting ? "Connecting…" : isFinishing ? "Transcribing…" : isListening ? "Stop Speaking & Send (Space)" : "Tap to Speak (Space)"}
                 </button>
 
                 <button
                   onClick={handleFinishInterrogation}
-                  className="px-8 py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-full transition-colors flex items-center gap-2 shadow-lg cursor-pointer"
+                  className="px-8 py-3.5 bg-brand hover:bg-brand-hover text-on-brand font-bold rounded-none transition-colors flex items-center gap-2 shadow-none cursor-pointer"
                 >
-                  <PhoneOff size={18} /> End & View Battle Report
+                  <PhoneOff size={18} /> Finish & view feedback
                 </button>
               </div>
             </div>
           </div>
         ) : (
           /* Post-Interrogation Battle Report View */
-          <div className="space-y-8 animate-[fadeIn_0.5s_ease_forwards]">
+          <div className="space-y-6 animate-[fadeIn_0.5s_ease_forwards]">
             {/* Header Score Card */}
-            <div className="bg-neutral-900/60 border border-neutral-800 rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="review-score bg-surface border border-line rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="space-y-3">
                 <div className="flex items-center gap-3">
-                  <Award className="text-yellow-500" size={26} />
-                  <h2 className="text-2xl font-black text-white">S.P.A.R.T.A. Battle Audit Report</h2>
+                  <Award className="text-warning" size={26} />
+                  <h2 className="text-3xl font-bold tracking-[-0.04em] text-ink">Your interview review</h2>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="px-3 py-1 bg-red-950/40 border border-red-900/60 text-red-400 font-mono text-xs rounded-md uppercase tracking-wider font-semibold">
-                    {isGeneratingReport ? "ANALYZING DEFENSE..." : defenseReport?.mode_evaluated || "VERBAL DEFENSE AUDIT"}
+                  <span className="px-3 py-1 bg-danger-soft border border-danger/20 text-danger font-sans text-xs rounded-none uppercase tracking-wide font-bold">
+                    {isGeneratingReport ? "REVIEWING ANSWERS…" : defenseReport?.mode_evaluated || "VERBAL DEFENSE AUDIT"}
                   </span>
                   {isGeneratingReport ? (
-                    <span className="px-3 py-1 bg-neutral-800 text-white font-mono text-xs rounded-md font-semibold flex items-center gap-2">
-                      <Loader2 className="animate-spin" size={12} /> EVALUATING VERDICT
+                    <span className="px-3 py-1 bg-tint text-ink font-sans text-xs rounded-none font-bold flex items-center gap-2">
+                      <Loader2 className="animate-spin" size={12} /> PREPARING FEEDBACK
                     </span>
                   ) : defenseReport?.defense_verdict && (
-                    <span className="px-3 py-1 bg-neutral-800 text-white font-mono text-xs rounded-md font-semibold">
+                    <span className="px-3 py-1 bg-tint text-ink font-sans text-xs rounded-none font-bold">
                       VERDICT: {defenseReport.defense_verdict}
                     </span>
                   )}
                 </div>
-                <p className="text-sm text-neutral-400">
-                  {roastData?.has_github 
-                    ? "Code and Resume grounded voice defense evaluation derived from your spoken answers." 
+                <p className="text-sm text-muted">
+                  {roastData?.has_github
+                    ? "Code and Resume grounded voice defense evaluation derived from your spoken answers."
                     : "Resume grounded voice defense evaluation derived from your spoken answers."}
                 </p>
               </div>
@@ -642,15 +597,15 @@ export default function InterrogationPage() {
               <div className="flex items-center gap-6">
                 <button
                   onClick={() => setShowTranscriptModal(true)}
-                  className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-mono rounded-lg transition-colors border border-neutral-700 cursor-pointer"
+                  className="px-4 py-2 bg-surface hover:bg-tint text-copy text-xs font-sans rounded-none transition-colors border border-line cursor-pointer"
                 >
                   View Transcript
                 </button>
-                <div className="text-center bg-black/60 border border-neutral-800 rounded-xl px-6 py-4">
-                  <p className="text-xs font-mono text-neutral-500 uppercase tracking-widest mb-1">
-                    Verbal Defense Score
+                <div className="text-center bg-violet-soft border border-line rounded-none px-6 py-4">
+                  <p className="text-xs font-sans text-muted uppercase tracking-wide mb-1">
+                    Interview score
                   </p>
-                  <span className="text-4xl font-black text-red-500">
+                  <span className="text-4xl font-bold text-danger">
                     {isGeneratingReport ? (
                       <Loader2 className="animate-spin inline-block mr-2" size={32} />
                     ) : (
@@ -663,11 +618,11 @@ export default function InterrogationPage() {
 
             {/* Phase 1: Mistakes & Failsafes */}
             {defenseReport?.phase1_mistakes && (
-              <div className="bg-neutral-950 border border-neutral-900 rounded-2xl p-8 space-y-6">
+              <div className="bg-surface border border-line rounded-2xl p-8 space-y-6">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                    <Activity className="text-red-500" size={22} />
-                    Phase 1: Mistakes & Scrutiny
+                  <h3 className="text-xl font-bold text-ink flex items-center gap-2">
+                    <Activity className="text-danger" size={22} />
+                    Technical feedback
                   </h3>
                 </div>
 
@@ -675,41 +630,41 @@ export default function InterrogationPage() {
                   {defenseReport.phase1_mistakes.map((mistake: any, idx: number) => (
                     <div
                       key={idx}
-                      className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-5 flex flex-col gap-3 relative overflow-hidden"
+                      className="bg-tint border border-line rounded-none p-5 flex flex-col gap-3 relative overflow-hidden"
                     >
                       {mistake.is_unanswered && (
-                         <div className="absolute top-0 left-0 w-full h-1 bg-yellow-500" />
+                         <div className="absolute top-0 left-0 w-full h-1 bg-warning" />
                       )}
-                      
+
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-mono font-bold text-neutral-400">
+                        <span className="text-xs font-sans font-bold text-muted">
                           {mistake.question_label}
                         </span>
-                        <span className={`px-2.5 py-1 font-mono text-xs rounded font-bold ${
-                          mistake.score >= 80 ? 'bg-green-950/60 text-green-400 border border-green-900/60' : 
-                          mistake.score >= 50 ? 'bg-yellow-950/60 text-yellow-400 border border-yellow-900/60' : 
-                          'bg-red-950/60 text-red-400 border border-red-900/60'
+                        <span className={`px-2.5 py-1 font-sans text-xs rounded-none font-bold ${
+                          mistake.score >= 80 ? 'bg-tint text-brand border border-line' :
+                          mistake.score >= 50 ? 'bg-warning-soft text-warning border border-warning/20' :
+                          'bg-danger-soft text-danger border border-danger/20'
                         }`}>
                           {mistake.score}/100
                         </span>
                       </div>
 
                       {mistake.feedback === "QUESTION NOT ANSWERED" ? (
-                        <p className="text-sm text-red-500 font-bold text-center my-4 uppercase tracking-wider">
+                        <p className="text-sm text-danger font-bold text-center my-4 uppercase tracking-wide">
                           QUESTION NOT ANSWERED
                         </p>
                       ) : (
-                        <p className="text-sm text-neutral-300 leading-relaxed font-medium">
+                        <p className="text-sm text-copy leading-relaxed font-medium">
                           "{mistake.feedback}"
                         </p>
                       )}
 
                       {mistake.is_unanswered && mistake.failsafe_recommendation && (
-                        <div className="mt-auto pt-3 border-t border-neutral-800">
-                          <p className="text-xs font-mono text-yellow-500 mb-1 flex items-center gap-1">
-                            ⚠️ Failsafe Recommendation
+                        <div className="mt-auto pt-3 border-t border-line">
+                          <p className="text-xs font-sans text-warning mb-1 flex items-center gap-1">
+                            Suggested next step
                           </p>
-                          <p className="text-xs text-yellow-200/70">
+                          <p className="text-xs text-warning">
                             {mistake.failsafe_recommendation}
                           </p>
                         </div>
@@ -721,44 +676,44 @@ export default function InterrogationPage() {
             )}
 
             {/* Phase 2: Corrections / Additions */}
-            <div className="bg-neutral-950 border border-neutral-900 rounded-2xl p-8 space-y-6">
+            <div className="bg-surface border border-line rounded-2xl p-8 space-y-6">
               <div className="flex items-center gap-3">
-                <Wrench className="text-white" size={22} />
-                <h3 className="text-xl font-bold text-white">Phase 2: Corrections & Resume Additions</h3>
+                <Wrench className="text-ink" size={22} />
+                <h3 className="text-xl font-bold text-ink">Resume suggestions</h3>
               </div>
-              <p className="text-sm text-neutral-400">
+              <p className="text-sm text-muted">
                 Actionable bullet points derived from your mock interview defense to fix gaps in your resume:
               </p>
 
               {isGeneratingReport ? (
-                <div className="py-12 text-center text-neutral-500 font-mono animate-pulse">
-                  Generating battle report & STAR resume patches from your voice defense...
+                <div className="py-12 text-center text-muted font-sans animate-pulse">
+                  Preparing feedback and resume suggestions from your answers…
                 </div>
               ) : defenseReport?.phase2_corrections?.length === 0 ? (
-                <div className="py-8 text-center text-red-500 font-bold font-mono border border-red-900/30 bg-red-950/20 rounded-xl">
-                  NO DEFENSE PROVIDED TO GENERATE BULLETS
+                <div className="py-8 text-center text-danger font-bold font-sans border border-danger/20 bg-danger-soft rounded-none">
+                  Answer the resume questions to receive bullet suggestions.
                 </div>
               ) : (
                 <div className="space-y-4">
                   {defenseReport?.phase2_corrections?.map((correction: any, idx: number) => (
                     <div
                       key={idx}
-                      className="bg-neutral-900/80 border border-neutral-800 rounded-xl p-5 space-y-3"
+                      className="bg-tint border border-line rounded-none p-5 space-y-3"
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="text-xs font-mono text-green-400 mb-1 flex items-center gap-2">
+                          <p className="text-xs font-sans text-brand mb-1 flex items-center gap-2">
                             <ShieldCheck size={14} /> Category: {correction.category || "Addition"}
                           </p>
-                          <p className="text-sm text-white font-medium leading-relaxed">
+                          <p className="text-sm text-ink font-medium leading-relaxed">
                             {correction.bullet}
                           </p>
                         </div>
                         <button
                           onClick={() => copyToClipboard(correction.bullet, idx)}
-                          className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-mono rounded-lg transition-colors flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
+                          className="px-3 py-1.5 bg-surface hover:bg-tint text-copy text-xs font-sans rounded-none transition-colors border border-line flex items-center gap-1.5 flex-shrink-0 cursor-pointer"
                         >
-                          {copiedIndex === idx ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                          {copiedIndex === idx ? <Check size={14} className="text-brand" /> : <Copy size={14} />}
                           {copiedIndex === idx ? "Copied" : "Copy Bullet"}
                         </button>
                       </div>
@@ -772,9 +727,9 @@ export default function InterrogationPage() {
             <div className="flex justify-center pt-4">
               <Link
                 href="/"
-                className="px-8 py-4 bg-white hover:bg-neutral-200 text-black font-bold rounded-xl transition-all flex items-center gap-2"
+                className="retro-button px-8 py-3.5 bg-brand hover:bg-brand-hover text-on-brand font-bold rounded-none transition-all flex items-center gap-2"
               >
-                <ArrowLeft size={18} /> Return to Main Dashboard
+                <ArrowLeft size={18} /> Return to dashboard
               </Link>
             </div>
           </div>
@@ -782,26 +737,26 @@ export default function InterrogationPage() {
 
         {/* Transcript Modal */}
         {showTranscriptModal && (
-          <div 
-            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6"
+          <div
+            className="fixed inset-0 z-50 bg-overlay  flex items-center justify-center p-6"
             onClick={() => setShowTranscriptModal(false)}
           >
-            <div 
-              className="bg-neutral-950 border border-neutral-800 rounded-2xl p-8 max-w-2xl w-full flex flex-col max-h-[80vh] shadow-2xl"
+            <div
+              className="bg-surface border border-line rounded-none p-8 max-w-2xl w-full flex flex-col max-h-[80vh] shadow-none"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between mb-6 border-b border-neutral-900 pb-4">
-                <h3 className="text-xl font-bold text-white">Full Interview Transcript</h3>
+              <div className="flex items-center justify-between mb-6 border-b border-line pb-4">
+                <h3 className="text-xl font-bold text-ink">Interview transcript</h3>
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={copyTranscriptToClipboard}
-                    className="p-2 text-green-400 hover:text-green-300 bg-green-950/30 hover:bg-green-900/40 rounded-lg transition-colors cursor-pointer border border-green-900/50 text-sm font-medium w-32"
+                    className="p-2 text-brand hover:text-brand-hover bg-tint hover:bg-surface rounded-none transition-colors cursor-pointer border border-line text-sm font-medium w-32"
                   >
                     {isCopied ? "Copied!" : "Copy Transcript"}
                   </button>
                   <button
                     onClick={() => setShowTranscriptModal(false)}
-                    className="p-2 text-neutral-400 hover:text-white bg-neutral-900 hover:bg-neutral-800 rounded-lg transition-colors cursor-pointer text-sm"
+                    className="p-2 text-muted hover:text-ink bg-tint hover:bg-surface rounded-none transition-colors cursor-pointer text-sm"
                   >
                     Close
                   </button>
@@ -809,16 +764,16 @@ export default function InterrogationPage() {
               </div>
               <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
                 {chatHistory.length === 0 ? (
-                  <p className="text-neutral-500 text-center font-mono py-8">No transcript recorded.</p>
+                  <p className="text-muted text-center font-sans py-8">No transcript recorded.</p>
                 ) : (
                   chatHistory
                     .filter((msg, idx) => !(idx === 0 && msg.type === "user" && msg.text.includes("Start the interrogation at TURN 0")))
                     .map((msg, idx) => (
-                    <div key={idx} className={`p-4 rounded-xl ${msg.type === "user" ? "bg-neutral-900 ml-12 border border-neutral-800" : "bg-red-950/20 border border-red-900/30 mr-12"}`}>
-                      <p className={`text-xs font-mono font-bold mb-2 uppercase tracking-wider ${msg.type === "user" ? "text-neutral-500" : "text-red-500/70"}`}>
+                    <div key={idx} className={`p-4 rounded-none ${msg.type === "user" ? "bg-tint ml-12 border border-line" : "bg-danger-soft border border-danger/20 mr-12"}`}>
+                      <p className={`text-xs font-sans font-bold mb-2 uppercase tracking-wide ${msg.type === "user" ? "text-muted" : "text-danger"}`}>
                         {msg.type === "user" ? "Candidate" : "S.P.A.R.T.A. Agent"}
                       </p>
-                      <p className="text-sm text-neutral-300 leading-relaxed">
+                      <p className="text-sm text-copy leading-relaxed">
                         {msg.text}
                       </p>
                     </div>

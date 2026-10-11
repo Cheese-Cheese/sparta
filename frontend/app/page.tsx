@@ -30,10 +30,14 @@ import {
   CheckCircle2,
   Copy,
   RefreshCcw,
+  ArrowUpRight,
 } from "lucide-react";
 import { prepare, layout } from '@chenglou/pretext';
 import axios from "axios";
-import TextType from "./components/TextType";
+import ThemeToggle from "./components/ThemeToggle";
+import TypewriterHeading from "./components/TypewriterHeading";
+import TypewriterText from "./components/TypewriterText";
+import { useSpeechRecorder } from "./hooks/useSpeechRecorder";
 
 // ─────────────────────────────────────────────────
 // Types
@@ -85,11 +89,11 @@ const LOCAL_CACHE = new Map<string, RoastData>();
 // Constants
 // ─────────────────────────────────────────────────
 const PROCESSING_MESSAGES = [
-  "✓ Parsing PDF...",
-  "✓ Extracting claims...",
-  "✓ Finding red flags...",
-  "🔥 Generating your roast...",
-];
+  "Warming up the interrogator. Please don't cry.",
+  "Calculating your Combat Readiness Score... this might hurt.",
+  "Preparing FAANG-grade attack vectors. Brace yourself.",
+  "Auditing your project. We hope you practiced your defense.",
+] as const;
 
 const MAX_FILE_SIZE_MB = 10;
 const API_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"}/analyze`;
@@ -126,15 +130,15 @@ function useCountUp(target: number, duration: number = 1500): number {
 // Helpers
 // ─────────────────────────────────────────────────
 function scoreColor(score: number): string {
-  if (score < 50) return "text-red-400";
-  if (score < 70) return "text-yellow-400";
-  return "text-green-400";
+  if (score < 50) return "text-danger";
+  if (score < 70) return "text-warning";
+  return "text-brand";
 }
 
 function scoreBarColor(score: number): string {
-  if (score < 50) return "bg-red-400";
-  if (score < 70) return "bg-yellow-400";
-  return "bg-green-400";
+  if (score < 50) return "bg-danger";
+  if (score < 70) return "bg-warning";
+  return "bg-accent";
 }
 
 function scoreBadgeLabel(score: number): string {
@@ -146,11 +150,11 @@ function scoreBadgeLabel(score: number): string {
 }
 
 function scoreBadgeColor(score: number): string {
-  if (score < 30) return "bg-red-500/20 text-red-400 border-red-500/30";
-  if (score < 50) return "bg-orange-500/20 text-orange-400 border-orange-500/30";
-  if (score < 70) return "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
-  if (score < 85) return "bg-blue-500/20 text-blue-400 border-blue-500/30";
-  return "bg-green-500/20 text-green-400 border-green-500/30";
+  if (score < 30) return "bg-danger-soft text-danger border-danger/20";
+  if (score < 50) return "bg-warning-soft text-warning border-warning/20";
+  if (score < 70) return "bg-warning-soft text-warning border-warning/20";
+  if (score < 85) return "bg-info-soft text-info border-info/20";
+  return "bg-accent-soft text-brand border-line";
 }
 
 const SECTION_ICONS: Record<keyof RoastSections, React.ElementType> = {
@@ -178,28 +182,10 @@ const SECTION_KEYS = [
 // Cycling Text Component
 // ─────────────────────────────────────────────────
 function CyclingText() {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % PROCESSING_MESSAGES.length);
-    }, 800);
-    return () => clearInterval(interval);
-  }, []);
-
   return (
-    <AnimatePresence mode="wait">
-      <motion.p
-        key={index}
-        initial={{ opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: -6 }}
-        transition={{ duration: 0.25 }}
-        className="text-sm font-mono text-neutral-400 tracking-wide"
-      >
-        {PROCESSING_MESSAGES[index]}
-      </motion.p>
-    </AnimatePresence>
+    <p role="status" className="w-full max-w-xl text-center text-sm font-mono text-muted tracking-wide">
+      <TypewriterText lines={PROCESSING_MESSAGES} />
+    </p>
   );
 }
 
@@ -215,21 +201,21 @@ function SkeletonDashboard() {
       className="w-full max-w-5xl mx-auto"
     >
       <div className="flex gap-4 w-full h-[480px]">
-        <div className="w-2/5 h-full rounded-xl bg-neutral-900 animate-pulse" />
+        <div className="w-2/5 h-full rounded-none bg-tint animate-pulse" />
         <div className="flex-1 flex flex-col gap-4">
           {[...Array(4)].map((_, i) => (
             <div
               key={i}
-              className="flex-1 rounded-xl bg-neutral-900 animate-pulse"
+              className="flex-1 rounded-none bg-tint animate-pulse"
               style={{ animationDelay: `${i * 100}ms` }}
             />
           ))}
         </div>
       </div>
       <div className="mt-8 flex flex-col items-center gap-3">
-        <div className="w-48 h-[2px] bg-neutral-800 rounded-full overflow-hidden">
+        <div className="w-48 h-[2px] bg-line rounded-none overflow-hidden">
           <motion.div
-            className="h-full bg-white rounded-full"
+            className="h-full bg-surface rounded-none"
             animate={{ x: ["-100%", "200%"] }}
             transition={{ duration: 1.2, repeat: Infinity, ease: "easeInOut" }}
           />
@@ -250,7 +236,7 @@ function ScoreRing({ score }: { score: number }) {
   const offset = circumference - (score / 100) * circumference;
 
   const ringColor =
-    score < 50 ? "#f87171" : score < 70 ? "#facc15" : "#4ade80";
+    score < 50 ? "var(--color-danger)" : score < 70 ? "var(--color-warning)" : "var(--color-accent)";
 
   return (
     <div className="relative flex items-center justify-center w-36 h-36 mx-auto">
@@ -266,7 +252,7 @@ function ScoreRing({ score }: { score: number }) {
           cy="72"
           r={radius}
           fill="none"
-          stroke="#262626"
+          stroke="var(--color-line)"
           strokeWidth="10"
         />
         {/* Progress */}
@@ -284,10 +270,10 @@ function ScoreRing({ score }: { score: number }) {
         />
       </svg>
       <div className="relative flex flex-col items-center">
-        <span className={`text-3xl font-black tabular-nums ${scoreColor(score)}`}>
+        <span className={`text-3xl font-bold tabular-nums ${scoreColor(score)}`}>
           {animated}
         </span>
-        <span className="text-xs text-neutral-500 font-mono">/100</span>
+        <span className="text-xs text-muted font-sans">/100</span>
       </div>
     </div>
   );
@@ -317,7 +303,7 @@ function SectionCard({ sectionKey, data, delay, visible }: SectionCardProps) {
 
   return (
     <div
-      className="bg-neutral-900 border border-neutral-800 rounded-xl p-5 mb-3 hover:border-neutral-700 transition-colors duration-200 cursor-pointer select-none"
+      className="review-section bg-surface border border-line rounded-2xl p-5 mb-3 hover:border-brand transition-colors duration-200 cursor-pointer select-none"
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0)" : "translateY(16px)",
@@ -336,24 +322,24 @@ function SectionCard({ sectionKey, data, delay, visible }: SectionCardProps) {
               return <IconComp className="w-4 h-4" />;
             })()}
           </span>
-          <span className="text-sm font-semibold text-white">
+          <span className="text-sm font-bold text-ink">
             {SECTION_LABELS[sectionKey]}
           </span>
         </div>
         <div className="flex items-center gap-2">
           <span
-            className={`text-xs font-bold px-2 py-0.5 rounded-full border font-mono ${scoreColor(data.score)} bg-neutral-800 border-neutral-700`}
+            className={`text-xs font-bold px-2 py-0.5 rounded-none border font-sans ${scoreColor(data.score)} bg-surface border-line`}
           >
             {data.score}
           </span>
-          <span className="text-neutral-600 text-xs">{open ? "▲" : "▼"}</span>
+          <span className="text-muted text-xs">{open ? "▲" : "▼"}</span>
         </div>
       </div>
 
       {/* Progress Bar */}
-      <div className="h-[3px] bg-neutral-800 rounded-full overflow-hidden mb-3">
+      <div className="h-[3px] bg-line rounded-none overflow-hidden mb-3">
         <div
-          className={`h-full rounded-full ${scoreBarColor(data.score)}`}
+          className={`h-full rounded-none ${scoreBarColor(data.score)}`}
           style={{
             width: barWidth,
             transition: "width 1s cubic-bezier(0.22,1,0.36,1)",
@@ -369,7 +355,7 @@ function SectionCard({ sectionKey, data, delay, visible }: SectionCardProps) {
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: 0.25 }}
-            className="text-sm text-neutral-300 leading-relaxed overflow-hidden"
+            className="text-sm text-copy leading-relaxed overflow-hidden"
           >
             {data.roast}
           </motion.p>
@@ -393,8 +379,8 @@ function StickyNav({ onReset }: { onReset?: () => void }) {
   }, []);
 
   return (
-    <div className="sticky top-0 z-50 bg-black/80 backdrop-blur-md border-b border-neutral-800">
-      <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
+    <div className="sticky top-0 z-50 bg-surface border-b-2 border-line">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 h-18 flex items-center justify-between">
         {/* Left */}
         {onReset ? (
           <button
@@ -402,40 +388,41 @@ function StickyNav({ onReset }: { onReset?: () => void }) {
             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-all group focus:outline-none"
             title="Return to Home"
           >
-            <Zap className="w-4 h-4 text-green-400 group-hover:scale-110 transition-transform" />
-            <span className="text-sm font-bold tracking-widest text-white uppercase group-hover:text-green-400 transition-colors">
+            <Zap className="w-4 h-4 text-brand group-hover:opacity-80 transition-transform" />
+            <span className="text-sm font-bold tracking-wide text-ink uppercase group-hover:text-brand transition-colors">
               S.P.A.R.T.A.
             </span>
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-white" />
-            <span className="text-sm font-bold tracking-widest text-white uppercase">
+            <Zap className="w-4 h-4 text-ink" />
+            <span className="text-sm font-bold tracking-[0.12em] text-ink uppercase">
               S.P.A.R.T.A.
             </span>
           </div>
         )}
 
         {/* Center */}
-        <div className="flex items-center gap-2">
-          <CheckCircle className="w-4 h-4 text-green-400" />
-          <span className="text-sm text-neutral-300 font-medium">
-            Audit Complete
+        <div className="hidden sm:flex items-center gap-2 border border-line bg-violet-soft text-violet px-3 py-1.5 rounded-none">
+          <CheckCircle className="w-4 h-4 text-brand" />
+          <span className="text-xs text-violet font-mono font-medium">
+            Review complete
           </span>
         </div>
 
         {/* Right */}
         <div className="flex items-center gap-4">
+          <ThemeToggle />
           {onReset && (
             <button
               onClick={onReset}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-neutral-900 border border-neutral-700 hover:border-green-500 text-xs font-mono text-neutral-300 hover:text-green-400 transition-all shadow-sm cursor-pointer"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-none bg-tint border border-line hover:border-brand text-xs font-sans text-copy hover:text-brand transition-all shadow-none cursor-pointer"
             >
-              <RefreshCcw className="w-3.5 h-3.5 text-green-400" />
+              <RefreshCcw className="w-3.5 h-3.5 text-brand" />
               <span>Return Home</span>
             </button>
           )}
-          <div className="hidden sm:flex items-center gap-2 text-neutral-500 text-xs font-mono">
+          <div className="hidden sm:flex items-center gap-2 text-muted text-xs font-sans">
             <Clock className="w-3.5 h-3.5" />
             <span>{time}</span>
           </div>
@@ -489,7 +476,7 @@ function RoastDashboard({
     <>
       <StickyNav onReset={onReset} />
       <div
-        className="max-w-[1600px] mx-auto w-full px-6 py-10 opacity-0 animate-[fadeIn_0.7s_ease_forwards]"
+        className="review-page max-w-7xl mx-auto w-full px-5 sm:px-8 py-8 opacity-0 animate-[fadeIn_0.7s_ease_forwards]"
         style={{ animationFillMode: "forwards" }}
       >
         <style>{`
@@ -498,14 +485,14 @@ function RoastDashboard({
           .ripple-circle { animation: ripple 0.6s ease-out forwards; }
         `}</style>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
           {/* ── Left Column: PDF Panel ── */}
           <div className="lg:col-span-6 lg:sticky lg:top-24 self-start">
-            <div className="bg-neutral-900/50 border border-neutral-800 rounded-xl min-h-[820px] p-6 flex flex-col">
+            <div className="bg-surface border border-line rounded-2xl min-h-[460px] lg:min-h-[720px] p-4 flex flex-col">
               {/* Panel header */}
               <div className="flex items-center gap-2 mb-4">
-                <FileText className="w-4 h-4 text-neutral-500" />
-                <span className="text-xs font-mono text-neutral-500 tracking-widest uppercase">
+                <FileText className="w-4 h-4 text-muted" />
+                <span className="text-xs font-sans text-muted tracking-wide uppercase">
                   Resume PDF
                 </span>
               </div>
@@ -514,20 +501,20 @@ function RoastDashboard({
                 // Real PDF viewer
                 <iframe
                   src={pdfUrl}
-                  className="w-full h-full rounded-xl min-h-[760px] border border-neutral-800 bg-neutral-900 flex-1"
+                  className="w-full h-full rounded-none min-h-[420px] lg:min-h-[660px] border border-line bg-tint flex-1"
                   title="Resume Preview"
                 />
               ) : (
-                // Keep the original shimmer skeleton as fallback 
+                // Keep the original shimmer skeleton as fallback
                 // when no file is available
                 <div className="flex-1 p-6 flex flex-col gap-4">
                   {[...Array(3)].map((_, blockIdx) => (
                     <div key={blockIdx} className="space-y-2">
-                      <div className="h-3 w-1/3 rounded bg-neutral-800 animate-pulse" />
+                      <div className="h-3 w-1/3 rounded-none bg-line animate-pulse" />
                       {[...Array(4)].map((_, lineIdx) => (
                         <div
                           key={lineIdx}
-                          className="h-2 rounded bg-neutral-800/60 animate-pulse"
+                          className="h-2 rounded-none bg-line animate-pulse"
                           style={{
                             width: `${70 + Math.random() * 25}%`,
                             animationDelay: `${(blockIdx * 4 + lineIdx) * 80}ms`,
@@ -543,22 +530,26 @@ function RoastDashboard({
 
           {/* ── Right Column: Roast Analysis ── */}
           <div className="lg:col-span-6">
+            <div className="mb-5">
+              <h1 className="text-3xl font-bold tracking-[-0.04em] text-ink">Your resume review</h1>
+              <p className="mt-1 text-sm text-muted">Understand your strengths and choose what to improve next.</p>
+            </div>
             {/* Score Header Card */}
-            <div className="bg-neutral-900/50 border border-neutral-800 rounded-xl p-6 mb-4">
+            <div className="review-score bg-surface border border-line rounded-2xl p-6 mb-4">
               <div className="flex flex-col items-center">
-                <span className="text-xs font-semibold text-neutral-500 uppercase tracking-widest mb-4">
-                  Combat Readiness
+                <span className="text-[11px] font-mono font-medium text-muted uppercase tracking-wide mb-4">
+                  Resume readiness
                 </span>
                 <ScoreRing score={roastData.combat_readiness_score} />
               </div>
 
-              <div className="text-center mt-4 space-y-2">
+              <div className="text-center mt-4 space-y-3">
                 <span
-                  className={`inline-block px-3 py-1 rounded-full border text-xs font-bold tracking-widest ${scoreBadgeColor(roastData.combat_readiness_score)}`}
+                  className={`inline-block px-3 py-1 rounded-none border text-xs font-bold tracking-wide ${scoreBadgeColor(roastData.combat_readiness_score)}`}
                 >
                   {scoreBadgeLabel(roastData.combat_readiness_score)}
                 </span>
-                <p className="text-white text-2xl font-black leading-snug">
+                <p className="text-ink text-2xl font-bold leading-snug">
                   {roastData.verdict}
                 </p>
               </div>
@@ -567,25 +558,25 @@ function RoastDashboard({
             {/* ── ATS METRICS SECTION ── */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               {/* Match Rate */}
-              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex flex-col justify-center">
-                <span className="text-xs font-semibold text-neutral-500 uppercase tracking-widest mb-1">Keyword Match</span>
-                <span className="text-2xl font-bold text-white">{roastData.ats_metrics.keyword_match_rate}%</span>
+              <div className="metric-card bg-violet-soft border border-line rounded-2xl p-5 flex flex-col justify-center">
+                <span className="text-xs font-bold text-muted uppercase tracking-wide mb-1">Keyword Match</span>
+                <span className="text-3xl font-mono font-bold tracking-tight text-ink">{roastData.ats_metrics.keyword_match_rate}%</span>
               </div>
-              
+
               {/* Quantification Rate */}
-              <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 flex flex-col justify-center">
-                <span className="text-xs font-semibold text-neutral-500 uppercase tracking-widest mb-1">Quantification</span>
-                <span className="text-2xl font-bold text-white">{roastData.ats_metrics.quantification_rate}%</span>
+              <div className="metric-card bg-accent-soft border border-line rounded-2xl p-5 flex flex-col justify-center">
+                <span className="text-xs font-bold text-muted uppercase tracking-wide mb-1">Quantification</span>
+                <span className="text-3xl font-mono font-bold tracking-tight text-ink">{roastData.ats_metrics.quantification_rate}%</span>
               </div>
             </div>
 
             {/* Missing Skills Badges */}
             {roastData.ats_metrics.missing_critical_skills.length > 0 && (
               <div className="mb-8">
-                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-widest mb-3">Critical Missing Ammo</h3>
+                <h3 className="text-xs font-bold text-muted uppercase tracking-wide mb-3">Skills to strengthen</h3>
                 <div className="flex flex-wrap gap-2">
                   {roastData.ats_metrics.missing_critical_skills.map((skill, idx) => (
-                    <span key={idx} className="bg-red-900/20 text-red-400 border border-red-800/50 rounded-full px-3 py-1 text-xs font-mono">
+                    <span key={idx} className="bg-danger-soft text-danger border border-danger/30 rounded-none px-3 py-1 text-xs font-sans">
                       {skill}
                     </span>
                   ))}
@@ -609,16 +600,16 @@ function RoastDashboard({
             {/* ── FAANG ATTACK VECTORS ── */}
             {roastData.faang_attack_vectors && roastData.faang_attack_vectors.length > 0 && (
               <div className="mt-8 mb-6">
-                <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <AlertTriangle size={14} className="text-yellow-500" />
-                  Predicted FAANG Attack Vectors
+                <h3 className="text-xs font-bold text-muted uppercase tracking-wide mb-4 flex items-center gap-2">
+                  <AlertTriangle size={14} className="text-warning" />
+                  Questions to prepare for
                 </h3>
-                
+
                 <div className="space-y-3">
                   {roastData.faang_attack_vectors.map((vector, idx) => (
-                    <div key={idx} className="bg-neutral-900 border border-neutral-800 border-l-2 border-l-yellow-500 rounded-lg p-4">
-                      <p className="text-xs text-neutral-500 font-mono mb-2">Claim Detected: "{vector.trigger_claim}"</p>
-                      <p className="text-sm text-neutral-200 font-medium leading-relaxed">{vector.attack_question}</p>
+                    <div key={idx} className="bg-tint border border-line border-l-2 border-l-warning rounded-none p-4">
+                      <p className="text-xs text-muted font-sans mb-2">Claim Detected: "{vector.trigger_claim}"</p>
+                      <p className="text-sm text-copy font-medium leading-relaxed">{vector.attack_question}</p>
                     </div>
                   ))}
                 </div>
@@ -635,22 +626,22 @@ function RoastDashboard({
               }}
             >
               <div className="flex flex-col sm:flex-row items-center gap-4 mt-8 w-full">
-                <button 
+                <button
                   onClick={() => {
                     sessionStorage.setItem("sparta_roast_data", JSON.stringify(roastData));
                     sessionStorage.setItem("sparta_resume_text", roastData.resume_text || "");
                     window.location.href = "/interrogation";
                   }}
-                  className="flex-1 px-8 py-4 bg-red-950/20 hover:bg-red-900/40 border border-red-500/30 hover:border-red-500/60 text-red-500 font-bold rounded-xl transition-all flex justify-center items-center gap-2"
+                  className="flex-1 px-6 py-3.5 bg-surface hover:bg-tint border border-line hover:border-line text-brand font-bold rounded-none transition-all flex justify-center items-center gap-2"
                 >
-                  <Mic size={18} /> Initiate Voice Interrogation →
+                  <Mic size={18} /> Practise an interview
                 </button>
 
-                <button 
+                <button
                   onClick={() => setAppState("rebuild")}
-                  className="flex-1 px-8 py-4 bg-white hover:bg-neutral-200 text-black font-bold rounded-xl transition-all flex justify-center items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+                  className="flex-1 px-6 py-3.5 bg-accent hover:bg-accent-hover text-on-accent font-bold rounded-none transition-all flex justify-center items-center gap-2 shadow-none"
                 >
-                  <Wrench size={18} /> Execute Reconstruction
+                  <Wrench size={18} /> Refine resume bullets
                 </button>
               </div>
             </div>
@@ -658,7 +649,7 @@ function RoastDashboard({
             {/* Reset */}
             <button
               onClick={onReset}
-              className="w-full text-xs text-neutral-600 hover:text-neutral-400 transition-colors duration-150 py-2"
+              className="w-full text-xs text-muted hover:text-brand transition-colors duration-150 py-2"
             >
               Analyze another resume
             </button>
@@ -672,12 +663,12 @@ function RoastDashboard({
 // ─────────────────────────────────────────────────
 // Voice Modal Simulator
 // ─────────────────────────────────────────────────
-const VoiceModal = ({ 
-  roastData, 
-  onClose 
-}: { 
-  roastData: RoastData; 
-  onClose: () => void 
+const VoiceModal = ({
+  roastData,
+  onClose
+}: {
+  roastData: RoastData;
+  onClose: () => void
 }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -685,11 +676,9 @@ const VoiceModal = ({
   const transcriptRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
-  const deepgramSocket = useRef<WebSocket | null>(null);
   const audioPlayer = useRef<HTMLAudioElement | null>(null);
   const [userTranscript, setUserTranscript] = useState("");
-  const [isListening, setIsListening] = useState(false);
+  const { start: startMicrophone, stop: finishRecording, isListening, isConnecting, isFinishing, error: microphoneError } = useSpeechRecorder(setUserTranscript);
 
   const [chatHistory, setChatHistory] = useState<{type: string, text: string}[]>([]);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
@@ -697,70 +686,15 @@ const VoiceModal = ({
   // The first Attack Vector is our starting context
   const attackContext = roastData.faang_attack_vectors?.[0];
 
-  const startMicrophone = async () => {
-    try {
-      const tokenRes = await fetch("/api/deepgram");
-      const tokenData = await tokenRes.json();
-      if (!tokenData.key) throw new Error("No Deepgram key returned");
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      deepgramSocket.current = new WebSocket(
-        "wss://api.deepgram.com/v1/listen?model=nova-2&interim_results=true&smart_format=true",
-        ['token', tokenData.key]
-      );
-      
-      deepgramSocket.current.onopen = () => {
-        mediaRecorder.current = new MediaRecorder(stream, { mimeType: "audio/webm" });
-        
-        mediaRecorder.current.ondataavailable = (event) => {
-          if (event.data.size > 0 && deepgramSocket.current?.readyState === 1) {
-            deepgramSocket.current.send(event.data);
-          }
-        };
-        
-        mediaRecorder.current.start(250);
-        setIsListening(true);
-        setUserTranscript(""); // Reset user transcript for new input
-      };
-
-      let fullTranscript = "";
-      deepgramSocket.current.onmessage = (message) => {
-        const received = JSON.parse(message.data);
-        const transcriptText = received.channel?.alternatives[0]?.transcript;
-        if (transcriptText) {
-          if (received.is_final) {
-            fullTranscript += transcriptText + " ";
-            setUserTranscript(fullTranscript);
-          } else {
-            setUserTranscript(fullTranscript + transcriptText);
-          }
-        }
-      };
-    } catch (err) {
-      console.error("Microphone error:", err);
-    }
-  };
-
-  const stopMicrophone = () => {
-    if (mediaRecorder.current) {
-      mediaRecorder.current.stop();
-      mediaRecorder.current.stream.getTracks().forEach(track => track.stop());
-    }
-    if (deepgramSocket.current) {
-      deepgramSocket.current.close();
-    }
-    setIsListening(false);
-    
-    if (userTranscript.trim()) {
-      triggerAiResponse(userTranscript);
-    }
+  const stopMicrophone = async () => {
+    const answer = await finishRecording();
+    if (answer) triggerAiResponse(answer);
   };
 
   const triggerAiResponse = async (userMessage: string) => {
     setIsAiSpeaking(true);
     setTranscript("");
-    
+
     try {
       const res = await axios.post("/api/interrogation", {
         message: userMessage,
@@ -793,9 +727,9 @@ const VoiceModal = ({
             try {
               audioPlayer.current.pause();
             } catch (e) {}
-            
+
             audioPlayer.current.src = audioUrl;
-            
+
             // Audio-synced text reveal handler
             audioPlayer.current.ontimeupdate = () => {
               if (audioPlayer.current && audioPlayer.current.duration > 0) {
@@ -804,17 +738,17 @@ const VoiceModal = ({
                 setTranscript(words.slice(0, wordIndex).join(" "));
               }
             };
-            
+
             audioPlayer.current.onended = () => {
               setTranscript(replyText.toString());
               setIsAiSpeaking(false);
               setChatHistory((prev) => [
-                ...prev, 
-                { type: "user", text: userMessage }, 
+                ...prev,
+                { type: "user", text: userMessage },
                 { type: "model", text: replyText.toString() }
               ]);
             };
-            
+
             try {
               await audioPlayer.current.play();
               audioPlayed = true;
@@ -828,7 +762,7 @@ const VoiceModal = ({
       } catch (err) {
         console.error("TTS Error:", err);
       }
-      
+
       // Fallback typewriter interval if audio isn't supported or fails
       if (!audioPlayed) {
         let currentText = "";
@@ -842,14 +776,14 @@ const VoiceModal = ({
             clearInterval(interval);
             setIsAiSpeaking(false);
             setChatHistory((prev) => [
-              ...prev, 
-              { type: "user", text: userMessage }, 
+              ...prev,
+              { type: "user", text: userMessage },
               { type: "model", text: replyText.toString() }
             ]);
           }
         }, 150);
       }
-      
+
     } catch (e) {
       console.error(e);
       setTranscript("SYS_ERR: Connection lost to S.P.A.R.T.A. main node. Ensure the backend is running.");
@@ -871,66 +805,66 @@ const VoiceModal = ({
   }, [transcript, userTranscript]);
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-overlay "
     >
-      <div className="w-full max-w-6xl bg-black border border-neutral-800 rounded-2xl shadow-2xl flex flex-col overflow-hidden h-[90vh]">
-        
+      <div className="w-full max-w-6xl bg-surface border border-line rounded-none shadow-none flex flex-col overflow-hidden h-[90vh]">
+
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-neutral-900 bg-neutral-950">
+        <div className="flex items-center justify-between p-6 border-b border-line bg-surface">
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-full bg-neutral-900 border border-neutral-800">
-              <Activity className="text-red-500 animate-pulse" size={18} />
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-none bg-tint border border-line">
+              <Activity className="text-danger animate-pulse" size={18} />
               {/* Outer pulsing ring */}
-              <div className="absolute inset-0 rounded-full border border-red-500/30 animate-ping"></div>
+              <div className="absolute inset-0 rounded-none border border-danger/20 hidden"></div>
             </div>
             <div>
-              <h2 className="text-white font-bold tracking-widest uppercase text-sm">S.P.A.R.T.A. Engine</h2>
-              <p className="text-red-500/80 text-xs font-mono uppercase">Live Interrogation</p>
+              <h2 className="text-ink font-bold tracking-wide uppercase text-sm">S.P.A.R.T.A. Engine</h2>
+              <p className="text-danger text-xs font-sans uppercase">Live Interrogation</p>
             </div>
           </div>
-          <div className="text-neutral-500 font-mono text-xs animate-pulse">
+          <div className="text-muted font-sans text-xs animate-pulse">
             REC 00:00:14
           </div>
         </div>
 
         {/* Main Body */}
         <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
-          
+
           {/* Left: Context Panel */}
-          <div className="lg:w-1/3 border-b lg:border-b-0 lg:border-r border-neutral-900 p-6 bg-neutral-950/50 flex flex-col gap-4">
-            <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-widest mb-2">Current Attack Vector</h3>
-            <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4">
-              <p className="text-xs text-neutral-500 font-mono mb-2">Trigger Claim:</p>
-              <p className="text-sm text-neutral-300">"{attackContext?.trigger_claim || 'Parsing resume...'}"</p>
+          <div className="lg:w-1/3 border-b lg:border-b-0 lg:border-r border-line p-6 bg-tint flex flex-col gap-4">
+            <h3 className="text-xs font-bold text-muted uppercase tracking-wide mb-2">Current Attack Vector</h3>
+            <div className="bg-tint border border-line rounded-none p-4">
+              <p className="text-xs text-muted font-sans mb-2">Trigger Claim:</p>
+              <p className="text-sm text-copy">"{attackContext?.trigger_claim || 'Parsing resume...'}"</p>
             </div>
-            <div className="bg-red-950/20 border border-red-900/30 rounded-xl p-4">
-              <p className="text-xs text-red-500/70 font-mono mb-2">Objective:</p>
-              <p className="text-sm text-red-400">Test depth of technical implementation. Do not accept high-level buzzwords.</p>
+            <div className="bg-danger-soft border border-danger/20 rounded-none p-4">
+              <p className="text-xs text-danger font-sans mb-2">Objective:</p>
+              <p className="text-sm text-danger">Test depth of technical implementation. Do not accept high-level buzzwords.</p>
             </div>
           </div>
 
           {/* Right: Transcript Window */}
-          <div className="flex-1 p-6 flex flex-col relative bg-black min-w-0 min-h-0">
-            <div className="absolute inset-0 bg-gradient-to-b from-black via-transparent to-transparent z-10 pointer-events-none h-24"></div>
-            
+          <div className="flex-1 p-6 flex flex-col relative bg-surface min-w-0 min-h-0">
+            <div className="absolute inset-0 bg-gradient-to-b from-surface via-transparent to-transparent z-10 pointer-events-none h-24"></div>
+
             <div ref={scrollRef} className="flex-1 overflow-y-auto pb-24 scrollbar-hide flex flex-col justify-start">
               <AnimatePresence>
                 {userTranscript && (
-                  <motion.div 
+                  <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -10 }}
                     className="flex items-start gap-4 mb-8 self-end"
                   >
-                    <div className="text-xl text-neutral-400 font-medium leading-relaxed max-w-2xl text-right">
+                    <div className="text-xl text-muted font-medium leading-relaxed max-w-2xl text-right">
                       {userTranscript}
-                      {isListening && <span className="inline-block w-2 h-5 bg-neutral-600 ml-2 animate-pulse"></span>}
+                      {isListening && <span className="inline-block w-2 h-5 bg-muted ml-2 animate-pulse"></span>}
                     </div>
-                    <div className="w-8 h-8 rounded bg-neutral-800 text-neutral-400 flex items-center justify-center font-bold text-xs flex-shrink-0">
+                    <div className="w-8 h-8 rounded-none bg-tint border border-line text-muted flex items-center justify-center font-bold text-xs flex-shrink-0">
                       YOU
                     </div>
                   </motion.div>
@@ -938,16 +872,16 @@ const VoiceModal = ({
               </AnimatePresence>
 
               <div className="flex items-start gap-4 mb-6">
-                <div className="w-8 h-8 rounded bg-white text-black flex items-center justify-center font-bold text-xs flex-shrink-0">
+                <div className="w-8 h-8 rounded-none bg-surface text-ink flex items-center justify-center font-bold text-xs flex-shrink-0">
                   AI
                 </div>
                 {/* PRETEXT DRIVEN CONTAINER */}
-                <div 
-                  className="text-2xl text-white font-light leading-relaxed max-w-2xl"
+                <div
+                  className="text-2xl text-ink font-light leading-relaxed max-w-2xl"
                   style={{ minHeight: containerHeight > 0 ? `${containerHeight}px` : 'auto' }}
                 >
                   {transcript}
-                  <span className="inline-block w-2 h-6 bg-red-500 ml-2 animate-pulse"></span>
+                  <span className="inline-block w-2 h-6 bg-danger ml-2 animate-pulse"></span>
                 </div>
               </div>
             </div>
@@ -956,23 +890,29 @@ const VoiceModal = ({
         </div>
 
         {/* Footer Controls */}
-        <div className="p-6 border-t border-neutral-900 bg-neutral-950 flex items-center justify-center gap-4 relative">
+        {microphoneError && <p role="alert" className="mx-6 mb-3 border border-danger/30 bg-danger-soft p-3 text-sm text-danger">{microphoneError}</p>}
+        <p role="status" className="px-6 text-center text-xs text-muted">
+          {isConnecting ? "Connecting microphone…" : isFinishing ? "Finishing transcription…" : isListening ? "Microphone is recording. Speak, then stop to send your answer." : "Tap the microphone to speak."}
+        </p>
+        <div className="p-6 border-t border-line bg-surface flex items-center justify-center gap-4 relative">
           <audio ref={audioPlayer} className="hidden" />
-          
-          <button 
+
+          <button
             onClick={isListening ? stopMicrophone : startMicrophone}
-            className={`p-4 rounded-full transition-all duration-300 border ${
-              isListening 
-                ? 'bg-red-500/20 border-red-500 text-red-500 shadow-[0_0_15px_rgba(239,68,68,0.5)] animate-pulse' 
-                : 'bg-neutral-900 border-neutral-800 text-white hover:bg-neutral-800'
+            disabled={isConnecting || isFinishing}
+            aria-label={isConnecting ? "Connecting microphone" : isFinishing ? "Finishing transcription" : isListening ? "Stop recording and send answer" : "Start recording"}
+            className={`p-4 rounded-none transition-all duration-300 border ${
+              isListening
+                ? 'bg-danger-soft border-danger text-danger shadow-none animate-pulse'
+                : 'bg-tint border-line text-ink hover:bg-surface'
             }`}
           >
             {isListening ? <MicOff size={20} /> : <Mic size={20} />}
           </button>
-          
-          <button 
+
+          <button
             onClick={onClose}
-            className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-full transition-colors flex items-center gap-2"
+            className="px-8 py-4 bg-brand hover:bg-brand-hover text-on-brand font-bold rounded-none transition-colors flex items-center gap-2"
           >
             <PhoneOff size={18} />
             End Interrogation
@@ -1067,61 +1007,61 @@ const RebuildModal = ({ onClose, rawResumeText, uploadedFile }: { onClose: () =>
   };
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/90 backdrop-blur-md"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-overlay "
     >
-      <div className="w-full max-w-4xl bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl flex flex-col h-[85vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-neutral-900 bg-black">
+      <div className="w-full max-w-4xl bg-surface border border-line rounded-xl shadow-none flex flex-col h-[85vh] overflow-hidden">
+        <div className="flex items-center justify-between p-6 border-b border-line bg-surface">
           <div>
-            <h2 className="text-white font-bold tracking-widest uppercase text-sm">S.P.A.R.T.A. Reconstruction</h2>
-            <p className="text-neutral-500 text-xs font-mono uppercase mt-1">Stacked Diff Transformation</p>
+            <h2 className="text-ink font-bold tracking-tight text-lg">Resume reconstruction</h2>
+            <p className="text-muted text-xs font-mono mt-1">Review, edit, and save your improvements</p>
           </div>
-          <button onClick={onClose} className="text-neutral-500 hover:text-white transition-colors">✕</button>
+          <button type="button" onClick={onClose} aria-label="Close resume reconstruction" className="close-button inline-flex h-9 w-9 shrink-0 items-center justify-center text-muted hover:text-ink transition-colors">✕</button>
         </div>
 
-        <div className="flex-1 p-6 overflow-y-auto bg-black space-y-8">
+        <div className="flex-1 p-6 overflow-y-auto bg-surface space-y-8">
           {isGenerating ? (
-             <div className="h-full flex flex-col items-center justify-center gap-4 text-neutral-500">
-                <Wrench className="animate-spin text-green-500/50" size={24} />
-                <p className="animate-pulse font-mono text-sm">Executing XYZ Formula Rewrite & Extracting Metrics...</p>
+             <div className="h-full flex flex-col items-center justify-center gap-4 text-muted">
+                <Wrench className="animate-spin text-brand" size={24} />
+                <p className="animate-pulse font-sans text-sm">Preparing your resume suggestions…</p>
              </div>
           ) : generationError ? (
-            <p role="alert" className="text-sm text-red-400">{generationError}</p>
+            <p role="alert" className="text-sm text-danger">{generationError}</p>
           ) : (
             (diffs || []).map((diff, idx) => (
               <div key={idx} className="flex flex-col gap-2">
                 {/* BEFORE block */}
-                <div className="p-4 bg-red-950/20 border border-red-900/30 rounded-lg">
-                  <span className="text-xs font-mono text-red-500/70 uppercase block mb-2">Original Context</span>
-                  <p className="text-sm text-neutral-400 line-through decoration-red-900/50">{diff.original}</p>
+                <div className="p-4 bg-tint border border-line rounded-none">
+                  <span className="text-xs font-sans text-muted uppercase block mb-2">Original bullet</span>
+                  <p className="text-sm text-muted ">{diff.original}</p>
                 </div>
-                
+
                 {/* AFTER block */}
-                <div className="p-5 bg-green-950/10 border border-green-500/30 rounded-lg relative group">
-                  <label className="flex items-center gap-2 text-xs font-mono text-green-400 uppercase mb-3">
+                <div className="p-5 pt-14 bg-surface border border-line border-l-4 border-l-violet rounded-none relative group">
+                  <label className="flex items-center gap-2 text-xs font-sans text-brand uppercase mb-3">
                     <input type="checkbox" checked={!!selectedBullets[idx]} disabled={isSaving}
                       aria-label={`Include bullet ${idx + 1} in PDF`}
                       onChange={event => setSelectedBullets(previous => previous.map((selected, index) => index === idx ? event.target.checked : selected))} />
                     Include in PDF copy
                   </label>
-                  <label className="block text-xs text-neutral-500 mb-2" htmlFor={`rewrite-${idx}`}>Edit and verify this bullet before saving</label>
+                  <label className="block text-xs text-muted mb-2" htmlFor={`rewrite-${idx}`}>Edit and verify this bullet before saving</label>
                   <textarea id={`rewrite-${idx}`} aria-label={`Edit reconstructed bullet ${idx + 1}`} value={diff.enhanced}
                     disabled={isSaving} maxLength={5000} rows={4}
                     onChange={event => setDiffs(previous => previous.map((item, index) => index === idx ? { ...item, enhanced: event.target.value } : item))}
-                    className="w-full rounded border border-neutral-700 bg-black p-3 text-sm text-neutral-200 focus:border-green-500 focus:outline-none" />
+                    className="w-full rounded-none border border-line bg-surface p-3 text-sm text-copy focus:border-brand focus:outline-none" />
                   {/* Pretext layout injection for smooth rendering */}
-                  <div className="text-sm text-neutral-200 font-mono leading-relaxed">
+                  <div className="text-sm text-copy font-sans leading-relaxed mt-4">
                     {diff.enhanced.split(/(🔴\[.*?\])/g).map((part, partIndex) =>
                       part.startsWith("🔴[") ? (
-                        <span key={partIndex} className="text-red-400 bg-red-950/50 px-1 rounded">{part.slice(2)}</span>
+                        <span key={partIndex} className="text-danger bg-danger-soft px-1 rounded-none">{part.slice(2)}</span>
                       ) : part
                     )}
                   </div>
-                  
-                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                    <button onClick={() => handleCopy(diff.enhanced, idx)} className="px-3 py-1 bg-black border border-neutral-700 hover:border-green-500 rounded text-xs text-neutral-300 transition-colors flex items-center gap-2">
-                      {copiedIndex === idx ? <CheckCircle2 size={12} className="text-green-500"/> : <Copy size={12}/>} 
+
+                  <div className="absolute top-4 right-4 opacity-100 transition-opacity flex gap-2">
+                    <button onClick={() => handleCopy(diff.enhanced, idx)} className="px-3 py-1 bg-surface border border-line hover:border-brand rounded-none text-xs text-copy transition-colors flex items-center gap-2">
+                      {copiedIndex === idx ? <CheckCircle2 size={12} className="text-brand"/> : <Copy size={12}/>}
                       {copiedIndex === idx ? "Copied" : "Copy"}
                     </button>
                   </div>
@@ -1130,19 +1070,19 @@ const RebuildModal = ({ onClose, rawResumeText, uploadedFile }: { onClose: () =>
             ))
           )}
         </div>
-        
+
         {/* Action Footer */}
         {!isGenerating && (
-          <div className="p-4 border-t border-neutral-900 bg-black space-y-3">
-            <p className="text-xs text-neutral-400">Selected bullets replace their original text in the PDF copy. No extra page is added. Shorten any bullet that cannot fit.</p>
-            {needsReview && <p role="alert" className="text-xs text-amber-400">Fill marked placeholders and empty bullets, or deselect them before saving.</p>}
-            {saveError && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
+          <div className="p-4 border-t border-line bg-surface space-y-3">
+            <p className="text-xs text-muted">Selected bullets replace their original text in the PDF copy. No extra page is added. Shorten any bullet that cannot fit.</p>
+            {needsReview && <p role="alert" className="text-xs text-warning">Fill marked placeholders and empty bullets, or deselect them before saving.</p>}
+            {saveError && <p role="alert" className="text-sm text-danger">{saveError}</p>}
             <div className="flex flex-wrap justify-end gap-3">
-            <button onClick={generateDiffs} disabled={isSaving} className="px-4 py-2 flex items-center gap-2 text-sm text-neutral-400 hover:text-white transition-colors disabled:opacity-50">
+            <button onClick={generateDiffs} disabled={isSaving} className="px-4 py-2 flex items-center gap-2 text-sm text-muted hover:text-ink transition-colors disabled:opacity-50">
               <RefreshCcw size={14} /> Regenerate All
             </button>
             <button onClick={savePdfCopy} disabled={isSaving || !uploadedFile || !selectedTexts.length || needsReview || !!generationError}
-              className="rounded-lg bg-green-500 px-4 py-2 text-sm font-semibold text-black disabled:opacity-40">
+              className="rounded-none bg-accent hover:bg-accent-hover px-4 py-2 text-sm font-bold text-on-accent transition-colors disabled:opacity-40">
               {isSaving ? "Saving PDF..." : `Save PDF copy (${selectedTexts.length})`}
             </button>
             </div>
@@ -1195,7 +1135,7 @@ export default function HomePage() {
 
     const fileCacheKey = `${file.name}-${file.size}-${file.lastModified}-${jobDescription.trim()}`;
     const cachedData = LOCAL_CACHE.get(fileCacheKey);
-    
+
     if (cachedData) {
       console.log("⚡ Cache hit for:", file.name);
       setUploadedFile(file);
@@ -1225,9 +1165,9 @@ export default function HomePage() {
         setAppState("error");
         return;
       }
-      
-      const parsedData = typeof response.data.data === "string" 
-        ? JSON.parse(response.data.data) 
+
+      const parsedData = typeof response.data.data === "string"
+        ? JSON.parse(response.data.data)
         : response.data.data;
 
       if (!parsedData || !parsedData.sections) {
@@ -1235,7 +1175,7 @@ export default function HomePage() {
         setAppState("error");
         return;
       }
-        
+
       LOCAL_CACHE.set(fileCacheKey, parsedData as RoastData);
       setRoastData(parsedData as RoastData);
       setAppState("done");
@@ -1315,22 +1255,22 @@ export default function HomePage() {
     const parsedResumeData = { text: "" }; // Fallback to prevent ReferenceError since it's not defined originally
     return (
       <>
-        <RoastDashboard 
-          roastData={roastData} 
-          uploadedFile={uploadedFile} 
-          onReset={handleReset} 
-          onInterviewStart={() => setAppState("interview")} 
+        <RoastDashboard
+          roastData={roastData}
+          uploadedFile={uploadedFile}
+          onReset={handleReset}
+          onInterviewStart={() => setAppState("interview")}
           setAppState={setAppState}
         />
         <AnimatePresence>
           {appState === "interview" && (
-            <VoiceModal 
-              roastData={roastData} 
-              onClose={() => setAppState("done")} 
+            <VoiceModal
+              roastData={roastData}
+              onClose={() => setAppState("done")}
             />
           )}
           {appState === "rebuild" && (
-            <RebuildModal 
+            <RebuildModal
               uploadedFile={uploadedFile}
               rawResumeText={(roastData as any)?.resume_text || ""}
               onClose={() => setAppState("done")}
@@ -1343,10 +1283,10 @@ export default function HomePage() {
 
   // ── Render: Upload / Processing / Error ──────
   return (
-    <main className="min-h-screen bg-black text-white flex flex-col items-center justify-center px-4 relative overflow-hidden">
+    <main className="upload-page min-h-screen bg-canvas text-ink flex flex-col items-center px-5 sm:px-8 relative">
       {/* Background grid */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.03]"
+        className="hidden"
         style={{
           backgroundImage:
             "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
@@ -1355,31 +1295,34 @@ export default function HomePage() {
       />
 
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1 }}
-        className="absolute top-8 left-8 flex items-center gap-2.5"
-      >
-        <div className="w-7 h-7 rounded-md bg-white flex items-center justify-center">
-          <ShieldAlert className="w-4 h-4 text-black" />
-        </div>
-        <span className="text-sm font-semibold tracking-widest text-white uppercase">
-          S.P.A.R.T.A.
-        </span>
-      </motion.div>
+      <div className="relative z-20 w-full max-w-6xl flex items-center justify-between gap-4 pt-6">
+        <motion.div
+          initial={{ opacity: 0, y: -16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+          className="upload-brand flex items-center gap-3"
+        >
+          <div className="w-9 h-9 rounded-none border border-line bg-accent flex items-center justify-center">
+            <ShieldAlert className="w-4 h-4 text-on-accent" />
+          </div>
+          <span className="text-sm font-bold tracking-[0.12em] text-ink uppercase">
+            S.P.A.R.T.A.
+          </span>
+        </motion.div>
 
-      <motion.p
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5, delay: 0.15 }}
-        className="absolute top-8 right-8 text-xs text-neutral-500 tracking-widest uppercase font-mono"
-      >
-        Resume Forensics · v2
-      </motion.p>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
+          className="flex items-center gap-4 text-xs text-muted"
+        >
+          <span className="hidden md:inline bg-violet-soft text-violet border border-line px-3 py-2 font-mono text-[10px] uppercase tracking-wide">Resume & interview preparation</span>
+          <ThemeToggle />
+        </motion.div>
+      </div>
 
       {/* Main content */}
-      <div className="relative z-10 w-full max-w-4xl flex flex-col items-center gap-10">
+      <div className="relative z-10 w-full max-w-6xl flex flex-col items-center gap-6 sm:gap-8 pt-8 pb-4">
         <AnimatePresence mode="wait">
           {appState !== "processing" && (
             <motion.div
@@ -1388,42 +1331,23 @@ export default function HomePage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -12 }}
               transition={{ duration: 0.5 }}
-              className="text-center space-y-5"
+              className="upload-hero w-full border-t-2 border-line pt-5 sm:pt-6"
             >
-              <p className="text-xs font-mono tracking-[0.25em] text-neutral-600 uppercase">
-                Forensic Resume Auditor · AI-Powered
+              <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.16em] text-muted">
+                Resume review / Interview preparation
               </p>
-              <div className="min-h-[7.5rem] md:min-h-[8.5rem] flex items-start justify-center w-full px-2">
-                <h1 className="text-3xl sm:text-4xl md:text-[3.25rem] font-semibold tracking-tight text-white leading-[1.2] text-center max-w-3xl">
-                  <TextType
-                    as="span"
-                    text={[
-                      "Your resume is about to get destroyed.",
-                      "We expose every lie in your resume.",
-                      "Code doesn't lie. Your resume does.",
-                      "S.P.A.R.T.A. never shows mercy.",
-                      "Drop the PDF. Face the verdict.",
-                    ]}
-                    typingSpeed={45}
-                    deletingSpeed={25}
-                    pauseDuration={2200}
-                    showCursor
-                    cursorCharacter="_"
-                    cursorBlinkDuration={0.45}
-                    cursorClassName="text-neutral-500 font-light"
-                    className="text-white"
-                    loop
-                  />
-                </h1>
+              <div className="flex flex-col gap-5">
+                <TypewriterHeading />
+                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 sm:gap-8">
+                  <p className="max-w-xl text-sm sm:text-base text-copy leading-relaxed">
+                    Match your resume to the role. Refine your bullet points.
+                    Practise the questions that follow.
+                  </p>
+                  <p className="shrink-0 font-mono text-[10px] lg:text-[11px] uppercase tracking-[0.1em] text-muted">
+                    01 Upload &nbsp; / &nbsp; 02 Review &nbsp; / &nbsp; 03 Prepare
+                  </p>
+                </div>
               </div>
-              <p className="text-sm text-neutral-500 tracking-wide max-w-md mx-auto leading-relaxed">
-                Upload your resume. Our AI cross-references every claim against
-                your actual GitHub code and issues a{" "}
-                <span className="text-neutral-300 font-medium">
-                  forensic verdict
-                </span>
-                .
-              </p>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1437,7 +1361,7 @@ export default function HomePage() {
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.96 }}
               transition={{ duration: 0.35 }}
-              className="w-full"
+              className="upload-workspace w-full grid grid-cols-1 md:grid-cols-[1.15fr_1fr] border border-line"
             >
               <motion.div
                 onClick={handleClick}
@@ -1445,34 +1369,35 @@ export default function HomePage() {
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
                 animate={{
-                  scale: isDragOver ? 1.015 : 1,
+                  scale: 1,
                   borderColor: isDragOver
-                    ? "rgba(161,161,170,0.6)"
-                    : "rgba(38,38,38,1)",
+                    ? "var(--color-brand)"
+                    : "var(--color-line)",
                   boxShadow: isDragOver
-                    ? "0 0 0 1px rgba(161,161,170,0.15), 0 0 40px rgba(255,255,255,0.04)"
+                    ? "inset 0 0 0 2px var(--color-line)"
                     : "none",
                 }}
                 transition={{ duration: 0.2, ease: "easeOut" }}
                 className={`
-                  relative flex flex-col items-center justify-center gap-5
-                  w-full min-h-[320px] md:min-h-[380px]
-                  rounded-2xl border-2 border-dashed
+                  upload-dropzone order-2 relative flex flex-col items-center justify-center gap-4
+                  w-full min-h-[320px]
+                  rounded-none border-0 p-6 pt-16
                   transition-all duration-300 select-none
                   ${!jobDescription.trim()
-                    ? "cursor-not-allowed opacity-60"
+                    ? "cursor-not-allowed"
                     : "cursor-pointer"
                   }
                   ${isDragOver && jobDescription.trim()
-                    ? "border-red-500/60 bg-red-500/5 scale-[1.02]"
+                    ? "border-line bg-tint"
                     : jdError
-                      ? "border-red-500/40 bg-red-500/5"
+                      ? "border-danger/30 bg-danger-soft"
                       : jobDescription.trim()
-                        ? "border-neutral-700 bg-neutral-900/50 hover:border-neutral-600 hover:bg-neutral-900"
-                        : "border-neutral-800 bg-neutral-900/30"
+                        ? "border-line bg-surface hover:border-line hover:bg-tint"
+                        : "border-line bg-tint"
                   }
                 `}
               >
+                <span className="absolute top-6 left-6 font-mono text-xs font-bold uppercase tracking-wide text-ink">02 · Resume PDF</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -1485,39 +1410,32 @@ export default function HomePage() {
                 <motion.div
                   animate={{ y: isDragOver ? -4 : 0 }}
                   transition={{ duration: 0.2 }}
-                  className="w-14 h-14 rounded-xl bg-neutral-900 border border-neutral-800 flex items-center justify-center"
+                  className="w-14 h-14 rounded-none bg-accent text-on-accent border border-line flex items-center justify-center"
                 >
-                  <UploadCloud
-                    className={`w-7 h-7 transition-colors duration-200 ${
-                      isDragOver ? "text-white" : "text-neutral-500"
-                    }`}
-                  />
+                  <UploadCloud className="w-7 h-7 text-on-accent" />
                 </motion.div>
 
                 <div className="text-center space-y-2 px-6">
-                  <p className="text-lg md:text-xl font-semibold text-white leading-snug">
-                    Drop your resume here to get{" "}
-                    <span className="text-neutral-400">
-                      brutally roasted by AI
-                    </span>
+                  <p className="text-xl font-bold text-ink leading-snug">
+                    Upload your resume
                   </p>
-                  <p className="text-xs text-neutral-500 mt-1">
+                  <p className="text-xs text-muted mt-1">
                     {jobDescription.trim()
-                      ? "✓ JD ready — drop your PDF to begin"
-                      : "Paste a Job Description below first"
+                      ? "Job description ready. Drop your PDF to begin."
+                      : "Add the job description first, then upload your PDF."
                     }
                   </p>
-                  <p className="text-sm text-neutral-600">
+                  <p className="text-sm text-muted">
                     PDF only · Max {MAX_FILE_SIZE_MB}MB
                   </p>
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <div className="h-px w-16 bg-neutral-800" />
-                  <span className="text-xs text-neutral-600 tracking-widest uppercase font-mono">
-                    or click to browse
+                  <div className="hidden" />
+                  <span className="retro-button inline-flex items-center gap-4 bg-accent text-on-accent border border-line px-4 py-3 text-xs font-mono font-bold uppercase tracking-wide">
+                    Browse PDF <ArrowUpRight size={18} aria-hidden="true" />
                   </span>
-                  <div className="h-px w-16 bg-neutral-800" />
+                  <div className="hidden" />
                 </div>
 
                   <AnimatePresence>
@@ -1526,105 +1444,97 @@ export default function HomePage() {
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
-                      className="absolute inset-0 rounded-2xl bg-white/[0.02] pointer-events-none"
+                      className="absolute inset-0 rounded-none bg-white/[0.02] pointer-events-none"
                     />
                   )}
                 </AnimatePresence>
               </motion.div>
 
               {/* ── JD INPUT SECTION ── */}
-              <div className="w-full mt-4 space-y-2 w-full min-h-[320px] md:min-h-[380px] max-w-[500px]">
+              <div className="job-description-panel order-1 w-full border-b md:border-b-0 md:border-r border-line bg-surface p-6 flex flex-col gap-4">
                 {/* Section Label */}
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-neutral-500 uppercase tracking-widest">
-                    Target Job Description
+                  <label htmlFor="job-description" className="font-mono text-xs font-bold uppercase tracking-wide text-ink">
+                    01 · Job description
                   </label>
-                  <span className={`text-xs tabular-nums transition-colors duration-200 ${jobDescription.length > 50 ? "text-green-400" : "text-neutral-600"}`}>
+                  <span className={`text-xs tabular-nums transition-colors duration-200 ${jobDescription.length > 50 ? "text-brand" : "text-muted"}`}>
                     {jobDescription.length} chars
                   </span>
                 </div>
 
                 {/* Textarea */}
-                <div className="relative">
+                <div className="relative flex-1">
                   <textarea
+                    id="job-description"
                     value={jobDescription}
                     onChange={(e) => {
                       setJobDescription(e.target.value);
                       if (jdError) setJdError(false);
                     }}
-                    placeholder="Paste the Target Job Description here&#10;(Required for FAANG Combat Simulation)..."
+                    placeholder="Paste the role’s responsibilities, required skills, and experience here…"
                     rows={4}
                     className={`
-                      w-full bg-neutral-900 rounded-xl p-4
-                      text-sm text-neutral-300 placeholder:text-neutral-600
+                      w-full h-full min-h-[180px] bg-tint rounded-[4px] p-4
+                      text-sm text-copy placeholder:text-muted
                       border transition-all duration-300
                       focus:outline-none resize-none
                       leading-relaxed
                       ${jdError
-                        ? "border-red-500/60 focus:border-red-500 bg-red-500/5"
+                        ? "border-danger/30 focus:border-danger bg-danger-soft"
                         : jobDescription.length > 50
-                          ? "border-green-500/30 focus:border-green-500/50"
-                          : "border-neutral-800 focus:border-neutral-500"
+                          ? "border-line focus:border-line"
+                          : "border-line focus:border-brand"
                       }
                     `}
                   />
-                  {jobDescription.length === 0 && (
-                    <div className="absolute bottom-3 right-3 flex items-center gap-1 pointer-events-none">
-                      <kbd className="px-1.5 py-0.5 rounded text-neutral-700 bg-neutral-800 text-xs font-mono">
-                        ⌘V
-                      </kbd>
-                    </div>
-                  )}
                   {jobDescription.length > 50 && (
                     <div className="absolute top-3 right-3 pointer-events-none">
-                      <CheckCircle size={14} className="text-green-400" />
+                      <CheckCircle size={14} className="text-brand" />
                     </div>
                   )}
                 </div>
 
                 {/* Error message */}
                 <div className={`
-                  flex items-center gap-2 px-3 py-2 rounded-lg
-                  border border-red-500/30 bg-red-500/5
+                  flex items-center gap-2 px-3 py-2 rounded-none
+                  border border-danger/20 bg-danger-soft
                   transition-all duration-300 ease-in-out
                   ${jdError ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1 hidden"}
                 `}>
-                  <AlertTriangle size={12} className="text-red-400 flex-shrink-0" />
-                  <p className="text-xs text-red-400">
-                    Paste a Job Description before uploading — 
-                    S.P.A.R.T.A. needs a target to calculate Combat Readiness.
+                  <AlertTriangle size={12} className="text-danger flex-shrink-0" />
+                  <p className="text-xs text-danger">
+                    Add a job description before uploading your resume.
                   </p>
                 </div>
 
-                <p className="text-xs text-neutral-600 leading-relaxed px-1">
-                  💡 Copy the full JD from LinkedIn, Greenhouse, or Lever. 
-                  More detail = more accurate FAANG simulation.
+                <p className="text-xs text-muted leading-relaxed px-1">
+                  Include the full description for a more useful review.
                 </p>
               </div>
 
               <AnimatePresence>
                 {appState === "error" && errorMessage && (
-                  <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+                  <div className="fixed inset-0 z-50 bg-overlay  flex items-center justify-center p-4">
                     <motion.div
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      className="bg-neutral-950 border border-red-900/60 rounded-2xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center gap-5 text-center"
+                      className="bg-surface border border-danger/20 rounded-none p-8 max-w-md w-full shadow-none flex flex-col items-center gap-5 text-center"
                     >
-                      <div className="w-12 h-12 rounded-full bg-red-950/60 border border-red-800/60 text-red-500 flex items-center justify-center">
+                      <div className="w-12 h-12 rounded-none bg-danger-soft border border-danger/20 text-danger flex items-center justify-center">
                         <AlertTriangle size={24} />
                       </div>
                       <div className="space-y-2">
-                        <h3 className="text-lg font-bold text-white tracking-wide">Document Rejected</h3>
-                        <p className="text-sm text-red-300/90 leading-relaxed font-medium">
+                        <h3 className="text-lg font-bold text-ink tracking-wide">Unable to review this document</h3>
+                        <p className="text-sm text-danger leading-relaxed font-medium">
                           {errorMessage}
                         </p>
                       </div>
                       <button
                         onClick={handleReset}
-                        className="mt-2 w-full py-3.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all text-xs font-mono uppercase tracking-wider shadow-lg cursor-pointer"
+                        className="mt-2 w-full py-3.5 bg-brand hover:bg-brand-hover text-on-brand font-bold rounded-none transition-all text-xs font-sans uppercase tracking-wide shadow-none cursor-pointer"
                       >
-                        ← Got It / Upload Another Resume
+                        Choose another resume
                       </button>
                     </motion.div>
                   </div>
@@ -1651,9 +1561,9 @@ export default function HomePage() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.5, delay: 0.4 }}
-        className="absolute bottom-6 text-xs text-neutral-700 font-mono tracking-widest"
+        className="w-full max-w-6xl mt-4 border-t border-line pt-4 pb-6 text-center font-mono text-[10px] uppercase tracking-[0.12em] text-muted"
       >
-        SMART PLATFORM FOR ADVERSARIAL READINESS &amp; TECHNICAL ASSESSMENT
+        Resume review · Technical interview practice · Clearer next steps
       </motion.p>
     </main>
   );
