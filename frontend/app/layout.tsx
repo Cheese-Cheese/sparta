@@ -23,7 +23,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{ __html: `
+            (function () {
+              var saved;
+              try { saved = localStorage.getItem('sparta-theme'); } catch (_) {}
+              var manual = saved === 'dark' || saved === 'light';
+              document.documentElement.dataset.theme = manual ? saved :
+                (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+              document.documentElement.dataset.themePreference = manual ? 'manual' : 'system';
+            })();
+          ` }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
