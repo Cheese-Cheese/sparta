@@ -4,7 +4,7 @@ export async function POST(req: Request) {
   try {
     const { resumeText, spokenTranscript, context, mode } = await req.json();
 
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "https://sparta-1l4n.onrender.com";
     const response = await fetch(`${backendUrl}/rebuild`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

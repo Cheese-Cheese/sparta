@@ -96,7 +96,7 @@ const PROCESSING_MESSAGES = [
 ] as const;
 
 const MAX_FILE_SIZE_MB = 10;
-const API_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:8000"}/analyze`;
+const API_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://sparta-1l4n.onrender.com"}/analyze`;
 
 // ─────────────────────────────────────────────────
 // useCountUp Hook
