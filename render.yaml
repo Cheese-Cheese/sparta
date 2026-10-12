@@ -30,8 +30,8 @@ services:
     buildCommand: pnpm install && pnpm build
     startCommand: pnpm start
     envVars:
-      - key: NEXT_PUBLIC_API_URL
-        value: "https://sparta-backend.onrender.com" # Update this value after backend is deployed
+      - key: NEXT_PUBLIC_BACKEND_URL
+        value: "https://sparta-1l4n.onrender.com"
       - key: NEXT_PUBLIC_GEMINI_API_KEY
         sync: false
       - key: DEEPGRAM_API_KEY
