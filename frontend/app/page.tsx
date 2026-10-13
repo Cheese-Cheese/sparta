@@ -12,7 +12,6 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import {
   UploadCloud,
-  ShieldAlert,
   FileText,
   Briefcase,
   Code2,
@@ -20,7 +19,6 @@ import {
   Shield,
   AlertTriangle,
   Mic,
-  Zap,
   CheckCircle,
   Clock,
   MicOff,
@@ -35,6 +33,7 @@ import {
 import { prepare, layout } from '@chenglou/pretext';
 import axios from "axios";
 import ThemeToggle from "./components/ThemeToggle";
+import SpartaLogo from "./components/SpartaLogo";
 import TypewriterHeading from "./components/TypewriterHeading";
 import TypewriterText from "./components/TypewriterText";
 import { useSpeechRecorder } from "./hooks/useSpeechRecorder";
@@ -388,14 +387,14 @@ function StickyNav({ onReset }: { onReset?: () => void }) {
             className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-all group focus:outline-none"
             title="Return to Home"
           >
-            <Zap className="w-4 h-4 text-brand group-hover:opacity-80 transition-transform" />
+            <SpartaLogo />
             <span className="text-sm font-bold tracking-wide text-ink uppercase group-hover:text-brand transition-colors">
               S.P.A.R.T.A.
             </span>
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <Zap className="w-4 h-4 text-ink" />
+            <SpartaLogo />
             <span className="text-sm font-bold tracking-[0.12em] text-ink uppercase">
               S.P.A.R.T.A.
             </span>
@@ -1302,9 +1301,7 @@ export default function HomePage() {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="upload-brand flex items-center gap-3"
         >
-          <div className="w-9 h-9 rounded-none border border-line bg-accent flex items-center justify-center">
-            <ShieldAlert className="w-4 h-4 text-on-accent" />
-          </div>
+          <SpartaLogo />
           <span className="text-sm font-bold tracking-[0.12em] text-ink uppercase">
             S.P.A.R.T.A.
           </span>

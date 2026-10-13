@@ -21,6 +21,7 @@ import Link from "next/link";
 import axios from "axios";
 import { useRouter } from "next/navigation";
 import ThemeToggle from "../components/ThemeToggle";
+import SpartaLogo from "../components/SpartaLogo";
 import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
 
 export default function InterrogationPage() {
@@ -380,7 +381,7 @@ export default function InterrogationPage() {
           </Link>
           <div className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
-            <Activity className="text-brand" size={18} />
+            <SpartaLogo alt="S.P.A.R.T.A. logo" className="h-8 w-auto shrink-0" />
             <h1 className="font-mono font-bold tracking-wide text-xs uppercase">Interview practice</h1>
           </div>
         </div>
