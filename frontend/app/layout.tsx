@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "S.P.A.R.T.A. — Smart Platform for Adversarial Readiness & Technical Assessment",
   description: "Smart Platform for Adversarial Readiness & Technical Assessment. FAANG-grade resume verification, code auditing, and live voice interrogation.",
+  icons: {
+    icon: { url: "/sparta-shield.svg", type: "image/svg+xml" },
+  },
 };
 
 export default function RootLayout({
