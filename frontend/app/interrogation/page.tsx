@@ -284,7 +284,8 @@ export default function InterrogationPage() {
     } catch (e) {
       console.error(e);
       if (!isInterrogationEndedRef.current) {
-        setTranscript("SYS_ERR: Connection lost to S.P.A.R.T.A. main node.");
+        const detail = axios.isAxiosError(e) ? e.response?.data?.error : undefined;
+        setTranscript(typeof detail === "string" ? detail : "SYS_ERR: Connection lost to S.P.A.R.T.A. main node.");
         setIsAiSpeaking(false);
       }
     }
@@ -381,14 +382,14 @@ export default function InterrogationPage() {
           </Link>
           <div className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
-            <SpartaLogo alt="S.P.A.R.T.A. logo" className="h-8 w-auto shrink-0" />
+            <SpartaLogo alt="S.P.A.R.T.A. logo" className="h-10 sm:h-12 w-auto shrink-0" />
             <h1 className="font-mono font-bold tracking-wide text-xs uppercase">Interview practice</h1>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <span className="px-3 py-1.5 bg-violet-soft border border-line text-violet text-xs font-mono rounded-none">
+          <span className="px-3 py-1.5 bg-secondary-soft border border-line text-secondary text-xs font-mono rounded-none">
             {showReport ? "INTERVIEW FEEDBACK" : (roastData?.has_github ? "CODE-BASED INTERVIEW" : "RESUME-BASED INTERVIEW")}
           </span>
         </div>
@@ -404,7 +405,7 @@ export default function InterrogationPage() {
               animate={{ opacity: 1, scale: 1 }}
               className="bg-surface border border-line rounded-xl p-8 max-w-lg w-full text-center space-y-6 shadow-none"
             >
-              <div className="w-16 h-16 rounded-none bg-violet-soft border border-line text-violet flex items-center justify-center mx-auto">
+              <div className="w-16 h-16 rounded-none bg-secondary-soft border border-line text-secondary flex items-center justify-center mx-auto">
                 <Activity size={32} />
               </div>
               <div className="space-y-2">
@@ -460,7 +461,7 @@ export default function InterrogationPage() {
                         }}
                         className={`p-3 rounded-none border transition-all ${
                           isCurrent
-                            ? "bg-violet-soft border-violet text-ink"
+                            ? "bg-secondary-soft border-secondary text-ink"
                             : isCompleted
                             ? "bg-tint border-line text-copy"
                             : "bg-tint border-line text-muted"
@@ -602,7 +603,7 @@ export default function InterrogationPage() {
                 >
                   View Transcript
                 </button>
-                <div className="text-center bg-violet-soft border border-line rounded-none px-6 py-4">
+                <div className="text-center bg-secondary-soft border border-line rounded-none px-6 py-4">
                   <p className="text-xs font-sans text-muted uppercase tracking-wide mb-1">
                     Interview score
                   </p>

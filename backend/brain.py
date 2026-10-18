@@ -80,7 +80,7 @@ def extract_projects_from_resume(resume_text):
 
 def analyze_resume_vs_code(resume_text, code_context, project_name=None, job_description: str = ""):
     """The 'Roast' Function using LLaMA 3.3 70B - Upgraded to S.P.A.R.T.A. Combat Readiness Simulator"""
-    no_code_provided = "NO CODE PROVIDED" in code_context or len(code_context) < 100
+    no_code_provided = "NO CODE PROVIDED" in code_context or not code_context.strip()
     
     if no_code_provided and project_name:
         return json.dumps({

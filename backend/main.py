@@ -14,6 +14,7 @@ import io
 import time
 import logging
 import asyncio
+from urllib.parse import unquote, urlsplit
 from collections import OrderedDict
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
@@ -141,10 +142,7 @@ class RepoRequest(BaseModel):
         if not v or not v.strip():
             raise ValueError('GitHub URL is required')
         v = v.strip()
-        if 'github.com' not in v.lower():
-            raise ValueError('Must be a valid GitHub URL (e.g., https://github.com/user/repo)')
-        pattern = r'(https?://)?(www\.)?github\.com/[\w\-\.]+/[\w\-\.]+'
-        if not re.match(pattern, v, re.IGNORECASE):
+        if not all(extract_github_details(v)[:2]):
             raise ValueError('Invalid GitHub URL format')
         return v
 
@@ -162,20 +160,20 @@ def validate_file_upload(file: UploadFile) -> tuple[bool, str]:
 def extract_github_details(url):
     if not url:
         return None, None, None
-    clean = url.replace("https://", "").replace("http://", "").replace("github.com/", "")
-    parts = clean.split("/")
+    try:
+        parsed = urlsplit(url if '://' in url else f'https://{url}')
+    except ValueError:
+        return None, None, None
+    if parsed.scheme not in ('http', 'https') or parsed.hostname not in ('github.com', 'www.github.com'):
+        return None, None, None
+    parts = parsed.path.strip('/').split('/')
     if len(parts) < 2:
         return None, None, None
-    owner = parts[0]
-    repo = parts[1]
-    branch = None
-    if "tree" in parts:
-        try:
-            tree_index = parts.index("tree")
-            if len(parts) > tree_index + 1:
-                branch = parts[tree_index + 1]
-        except:
-            pass
+    owner, repo = parts[:2]
+    repo = repo.removesuffix('.git')
+    if not re.fullmatch(r'[\w.-]+', owner) or not re.fullmatch(r'[\w.-]+', repo):
+        return None, None, None
+    branch = unquote('/'.join(parts[3:])) if len(parts) > 3 and parts[2] == 'tree' else None
     return owner, repo, branch
 
 @app.get("/")
@@ -396,7 +394,7 @@ async def analyze_portfolio(
 
     if github_url and github_url.strip() and github_url != "null":
         github_url = github_url.strip()
-        if 'github.com' not in github_url.lower():
+        if not all(extract_github_details(github_url)[:2]):
             raise HTTPException(status_code=400, detail="Invalid GitHub URL format")
 
     logger.info(f"📥 Received Analysis Request.")
@@ -423,10 +421,11 @@ async def analyze_portfolio(
 
         if not target_url:
             import re
-            github_match = re.search(r'(https?://(?:www\.)?github\.com/[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?)', resume_text)
-            if github_match:
-                target_url = github_match.group(1)
-                print(f"   🎯 Automatically extracted GitHub URL from resume: {target_url}")
+            for candidate in re.findall(r'https?://(?:www\.)?github\.com/[^\s<>\"\)]+', resume_text):
+                candidate = candidate.rstrip('.,;')
+                if all(extract_github_details(candidate)[:2]):
+                    target_url = candidate
+                    break
 
         if target_url:
             print(f"   🎯 Using selected project URL: {target_url}")
@@ -434,6 +433,7 @@ async def analyze_portfolio(
             print(f"   ⚠️ No GitHub URL provided - analyzing resume claims only (PHANTOMWARE CHECK)")
 
         code_context = ""
+        github_error = None
         if target_url:
             owner, repo, branch = extract_github_details(target_url)
             if owner and repo:
@@ -444,13 +444,18 @@ async def analyze_portfolio(
                     code_context = cached
                 else:
                     logger.info(f"   💻 Target: {owner}/{repo} (Branch: {branch or 'Auto'})")
-                    code_context = ingest_github.fetch_repo_content(owner, repo, branch)
-                    if code_context and len(code_context) > 100:
+                    try:
+                        code_context = ingest_github.fetch_repo_content(owner, repo, branch)
+                    except ingest_github.GitHubFetchError as error:
+                        github_error = str(error)
+                        logger.warning('GitHub evidence unavailable: %s', github_error)
+                    if code_context:
                         REPO_CACHE.set(cache_key, code_context)
             else:
-                code_context = "Error: Invalid URL extracted."
-        else:
-            code_context = "⚠️ NO CODE PROVIDED. This project has NO GitHub link. All claims are UNVERIFIED and should be flagged as potential PHANTOMWARE."
+                github_error = 'Invalid GitHub repository URL.'
+        has_github = bool(code_context and not github_error)
+        if not has_github:
+            code_context = 'NO CODE PROVIDED. Repository evidence is unavailable. Evaluate resume claims without claiming code verification.'
 
         analysis_json = brain.analyze_resume_vs_code(resume_text, code_context, project_name, job_description)
         
@@ -458,7 +463,11 @@ async def analyze_portfolio(
         try:
             data = json.loads(analysis_json)
             data["resume_text"] = resume_text
-            data["has_github"] = True if target_url else False
+            data["has_github"] = has_github
+            data["code"] = code_context[:50000] if has_github else ""
+            data["repo_url"] = target_url if has_github else None
+            data["job_description"] = job_description
+            data["github_error"] = github_error
             analysis_json = json.dumps(data)
             
             critique = "\n".join([f"- {x}" for x in data.get("project_critique", [])])
@@ -507,10 +516,10 @@ async def add_repo_context(request: RepoRequest):
         else:
             logger.info(f"   💻 Fetching: {owner}/{repo} (Branch: {branch or 'Default'})")
             code_context = ingest_github.fetch_repo_content(owner, repo, branch)
-            if code_context and len(code_context) >= 100:
+            if code_context:
                 REPO_CACHE.set(cache_key, code_context)
 
-        if not code_context or len(code_context) < 100:
+        if not code_context:
             return {"status": "error", "bullets": "⚠️ ACCESS DENIED: Repo is empty, Private, or Branch not found."}
 
         bullets = brain.generate_star_bullets(code_context)
@@ -534,11 +543,25 @@ async def start_interview():
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    user_data = DB.get('current_user')
-    if not user_data:
-        return {"response": "⚠️ SYSTEM ERROR: No data found."}
-
-    context_summary = f"--- RESUME ---\n{user_data['resume'][:1000]}...\n--- CODE EVIDENCE ---\n{user_data['code']}"
+    try:
+        context = json.loads(request.context)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail='Invalid interview context. Analyze the resume again.')
+    if not isinstance(context, dict) or not isinstance(context.get('resume_text'), str) or not context['resume_text'].strip():
+        raise HTTPException(status_code=409, detail='Resume context is missing. Analyze the resume again.')
+    code = context.get('code', '')
+    if not isinstance(code, str) or (context.get('has_github') and not code.strip()):
+        raise HTTPException(status_code=409, detail='Repository context is missing. Analyze the resume again.')
+    job_description = context.get('job_description', '')
+    if not isinstance(job_description, str):
+        raise HTTPException(status_code=400, detail='Invalid job description in interview context.')
+    # Each browser sends its own analysis snapshot; never use another upload's DB record.
+    context_summary = (
+        f"--- RESUME ---\n{context['resume_text'][:12000]}\n"
+        f"--- JOB DESCRIPTION ---\n{job_description[:12000]}\n"
+        f"--- REPOSITORY ---\n{context.get('repo_url') or 'None'}\n"
+        f"--- CODE EVIDENCE ---\n{code[:50000] or 'NO CODE PROVIDED. Interview from resume claims only.'}"
+    )
 
     gemini_history = [] 
     for msg in request.history:

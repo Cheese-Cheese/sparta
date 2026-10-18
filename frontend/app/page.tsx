@@ -74,6 +74,11 @@ export interface RoastData {
     attack_question: string;
   }>;
   resume_text?: string;
+  code?: string;
+  repo_url?: string | null;
+  job_description?: string;
+  has_github?: boolean;
+  github_error?: string | null;
 }
 
 interface ApiResponse {
@@ -402,9 +407,9 @@ function StickyNav({ onReset }: { onReset?: () => void }) {
         )}
 
         {/* Center */}
-        <div className="hidden sm:flex items-center gap-2 border border-line bg-violet-soft text-violet px-3 py-1.5 rounded-none">
+        <div className="hidden sm:flex items-center gap-2 border border-line bg-secondary-soft text-secondary px-3 py-1.5 rounded-none">
           <CheckCircle className="w-4 h-4 text-brand" />
-          <span className="text-xs text-violet font-mono font-medium">
+          <span className="text-xs text-secondary font-mono font-medium">
             Review complete
           </span>
         </div>
@@ -484,6 +489,11 @@ function RoastDashboard({
           .ripple-circle { animation: ripple 0.6s ease-out forwards; }
         `}</style>
 
+        {roastData.github_error && (
+          <p role="status" className="mb-6 border border-warning/30 bg-warning-soft p-4 text-sm text-warning">
+            GitHub evidence was unavailable: {roastData.github_error} This review and interview will use resume claims only.
+          </p>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
           {/* ── Left Column: PDF Panel ── */}
           <div className="lg:col-span-6 lg:sticky lg:top-24 self-start">
@@ -557,7 +567,7 @@ function RoastDashboard({
             {/* ── ATS METRICS SECTION ── */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               {/* Match Rate */}
-              <div className="metric-card bg-violet-soft border border-line rounded-2xl p-5 flex flex-col justify-center">
+              <div className="metric-card bg-secondary-soft border border-line rounded-2xl p-5 flex flex-col justify-center">
                 <span className="text-xs font-bold text-muted uppercase tracking-wide mb-1">Keyword Match</span>
                 <span className="text-3xl font-mono font-bold tracking-tight text-ink">{roastData.ats_metrics.keyword_match_rate}%</span>
               </div>
@@ -785,7 +795,8 @@ const VoiceModal = ({
 
     } catch (e) {
       console.error(e);
-      setTranscript("SYS_ERR: Connection lost to S.P.A.R.T.A. main node. Ensure the backend is running.");
+      const detail = axios.isAxiosError(e) ? e.response?.data?.error : undefined;
+      setTranscript(typeof detail === "string" ? detail : "SYS_ERR: Connection lost to S.P.A.R.T.A. main node. Ensure the backend is running.");
       setIsAiSpeaking(false);
     }
   };
@@ -1037,7 +1048,7 @@ const RebuildModal = ({ onClose, rawResumeText, uploadedFile }: { onClose: () =>
                 </div>
 
                 {/* AFTER block */}
-                <div className="p-5 pt-14 bg-surface border border-line border-l-4 border-l-violet rounded-none relative group">
+                <div className="p-5 pt-14 bg-surface border border-line border-l-4 border-l-secondary rounded-none relative group">
                   <label className="flex items-center gap-2 text-xs font-sans text-brand uppercase mb-3">
                     <input type="checkbox" checked={!!selectedBullets[idx]} disabled={isSaving}
                       aria-label={`Include bullet ${idx + 1} in PDF`}
@@ -1156,7 +1167,6 @@ export default function HomePage() {
       const response = await axios.post<ApiResponse>(API_URL, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      console.log("✅ S.P.A.R.T.A. Raw Response:", response.data);
 
       if (response.data.status === "error" || (response.data as any).detail) {
         const errorDetail = (response.data as any).detail || (response.data as any).message || "Document rejected. Please upload a valid resume PDF.";
@@ -1175,7 +1185,7 @@ export default function HomePage() {
         return;
       }
 
-      LOCAL_CACHE.set(fileCacheKey, parsedData as RoastData);
+      if (!parsedData.github_error) LOCAL_CACHE.set(fileCacheKey, parsedData as RoastData);
       setRoastData(parsedData as RoastData);
       setAppState("done");
     } catch (err: unknown) {
@@ -1313,7 +1323,7 @@ export default function HomePage() {
           transition={{ duration: 0.5, delay: 0.15 }}
           className="flex items-center gap-4 text-xs text-muted"
         >
-          <span className="hidden md:inline bg-violet-soft text-violet border border-line px-3 py-2 font-mono text-[10px] uppercase tracking-wide">Resume & interview preparation</span>
+          <span className="hidden md:inline bg-secondary-soft text-secondary border border-line px-3 py-2 font-mono text-[10px] uppercase tracking-wide">Resume & interview preparation</span>
           <ThemeToggle />
         </motion.div>
       </div>
