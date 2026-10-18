@@ -14,11 +14,12 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json(response.data);
-  } catch (error: any) {
-    console.error("Error in interrogation route:", error.message);
+  } catch (error: unknown) {
+    const upstream = axios.isAxiosError(error) ? error.response : undefined;
+    const detail = upstream?.data?.detail;
     return NextResponse.json(
-      { error: "Failed to communicate with AI engine" },
-      { status: 500 }
+      { error: typeof detail === "string" ? detail : "Failed to communicate with AI engine" },
+      { status: upstream?.status || 502 }
     );
   }
 }

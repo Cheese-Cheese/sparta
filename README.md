@@ -1,194 +1,232 @@
-# 🛡️ S.P.A.R.T.A. — Smart Platform for Adversarial Readiness & Technical Assessment
+<p align="center">
+  <img src="frontend/public/sparta-shield.svg" alt="S.P.A.R.T.A. shield" width="84" />
+</p>
 
-<div align="center">
+# S.P.A.R.T.A.
 
-![S.P.A.R.T.A. Banner](https://img.shields.io/badge/S.P.A.R.T.A.-FAANG%20Interrogation%20Engine-FF0033?style=for-the-badge&logo=matrix&logoColor=white)
+**Smart Platform for Adversarial Readiness & Technical Assessment**
 
-**"Battle-Test Candidates Before the Real Interview"**
+S.P.A.R.T.A. compares a resume with a job description and available GitHub repository evidence. It produces a review, runs a voice interview, and suggests resume improvements.
 
-*Eliminate resume inflation, catch phantomware, and rebuild battle-tested software engineers.*
+Repository evidence helps the interviewer ask specific technical questions. It does not prove who wrote the code or that every resume claim is true.
 
-[![Next.js 16](https://img.shields.io/badge/Next.js-16%20Turbopack-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.13-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
-[![Groq Fast API](https://img.shields.io/badge/Groq-Fast%20Inference-f55036?style=flat-square)](https://groq.com/)
-[![Deepgram](https://img.shields.io/badge/Deepgram-Nova--2%20%26%20Aura-13EF93?style=flat-square)](https://deepgram.com/)
-[![NVIDIA NIM](https://img.shields.io/badge/NVIDIA-Nemotron--OCR--v1-76B900?style=flat-square&logo=nvidia)](https://build.nvidia.com/)
+## What the application does
 
-</div>
+- **Resume review:** Extract PDF text, identify claims, compare skills with the job description, and calculate a readiness score.
+- **GitHub ingestion:** Read supported repository files through GitHub's API, then include that evidence in the review and interview.
+- **Voice interview:** Ask one question per turn, transcribe spoken answers, and follow the interview's topic progression.
+- **Interview feedback:** Compare the spoken answers with the resume, job description, and available code evidence.
+- **Resume reconstruction:** Generate editable replacements for existing bullets. Save selected replacements into a PDF copy without adding a summary page.
+- **Themes:** Minimal brutalist styling, silver-and-cyan light mode, deep-blue dark mode, animated headlines, and retro button feedback.
 
----
+Dashboard reconstruction and interview feedback are separate operations. Interview suggestions do not automatically change the uploaded PDF.
 
-## 🎯 Overview
+## Main flow
 
-**S.P.A.R.T.A.** (**Smart Platform for Adversarial Readiness & Technical Assessment**) is an elite, high-stakes AI-powered technical auditing and interrogation platform. Designed to bridge the gap between exaggerated resume claims and true technical competence, S.P.A.R.T.A. cross-references uploaded candidate resumes against real GitHub code evidence and target Job Descriptions (JDs).
-
-It operates through a **Two-Phase Architecture**:
-1. **Phase 1: The Scrutiny (The Hot Seat)** — A ruthless technical hiring manager persona that stress-tests under-the-hood implementation mechanics across 4 structured turns.
-2. **Phase 2: The Rebuild & Battle Audit Report (The Coach)** — A supportive career strategist that converts the candidate's actual voice defense into FAANG-grade XYZ/STAR resume patches.
-
----
-
-## ✨ Key Features
-
-### 🔍 1. Hybrid PDF Extraction & NVIDIA OCR Bridge
-- **Native Fast-Lane**: Instant digital vector text extraction using PyMuPDF (`fitz`).
-- **NVIDIA Nemotron-OCR-v1 Fallback**: Automatic 3.0x lossless PNG rendering and dedicated NVIDIA NIM inference for scanned PDF pages.
-
-### 📊 2. Dynamic Combat Readiness Scoring ($0-100$)
-- **Weighted Mathematical Post-Processor**: Calculates dynamic scores based on actual evidence rather than static anchoring:
-  $$\text{Score} = \text{round}(0.40 \times \text{Experience} + 0.30 \times \text{Skills} + 0.15 \times \text{Formatting} + 0.15 \times \text{ATS})$$
-- **Semantic Skill Extraction**: Context-aware missing skill analysis (e.g. recognizing `NodeJS` = `Node.js`, `Managed 10-person team` = `team management`). Returns `[]` when all requirements are satisfied.
-
-### 🎙️ 3. Full-Screen Voice Interrogation Terminal (`/interrogation`)
-- **Real-Time Voice Recognition**: Microsecond streaming STT powered by **Deepgram Nova-2**.
-- **Natural Voice Synthesis**: Spoken audio generation via **Deepgram Aura Athena** with real-time word reveal.
-- **Dynamic Programmatic State Machine**:
-  - Replaces fragile LLM prompt-planning with a strict Python-based state machine that ensures rigid 1-question pacing across 6-8+ turns.
-  - **Phase 1 (Claims Verification)**: Systematically interrogates 3-4 domains extracted from the candidate's actual resume/code overlap.
-  - **Phase 1 Scenario**: Injects a dynamically generated "What-If" system design challenge scaled to the target seniority level.
-  - **Phase 2 (Missing Skill Gaps)**: Pivots to grill the candidate on 2-3 domains explicitly required by the Job Description but missing from their resume.
-- **Adaptive Follow-Up Logic**: Dynamically triggers follow-up questions if the candidate dodges or provides weak answers, but skips them if the candidate verbally surrenders.
-- **Async Audio Race Safety**: Immediate voice cutoff and auto-transition to the Final Report when the AI concludes the final domain.
-
-### 📄 4. S.P.A.R.T.A. Battle Audit Report
-- Generates 3 copy-pasteable FAANG-grade XYZ/STAR resume bullets built directly from the candidate's **spoken defense transcript**.
-
----
-
-## 🚀 AI & Neural Network Models Stack
-
-| Model Name | Provider | Role in S.P.A.R.T.A. |
-| :--- | :--- | :--- |
-| **HEAVY_MODEL (`gpt-oss-120b`)** | Groq / OpenAI API | **Flagship Audit & Interrogation Brain**: Technical critique, dynamic scoring, State Machine, and STAR resume reconstruction. |
-| **FAST_MODEL (`gpt-oss-20b`)** | Groq / OpenAI API | **Gatekeeper**: Ultra-fast resume validation checking document structure in `< 400ms`. |
-| **NVIDIA Nemotron-OCR-v1** | NVIDIA NIM API | **High-Res OCR Engine**: Lossless PNG OCR for scanned PDF resumes. |
-| **Deepgram Nova-2** | Deepgram | **Real-Time STT**: Microsecond streaming speech recognition. |
-| **Deepgram Aura Athena** | Deepgram | **Natural TTS**: Neural voice synthesis for live interrogation responses. |
-| **PyMuPDF (`fitz`)** | Open Source | **Digital Vector Extraction**: Zero-latency native PDF parser. |
-
----
-
-## 🛠️ Project Structure
-
-```
-S.P.A.R.T.A/
-├── backend/
-│   ├── main.py              # FastAPI server & route handlers
-│   ├── brain.py             # LLM State Machine Engine & dynamic scoring logic
-│   ├── pipeline.py          # NVIDIA Nemotron-OCR-v1 & PyMuPDF hybrid bridge
-│   ├── ingest_github.py     # GitHub repository scrapers
-│   ├── ingest_pdf.py        # PDF text parsers
-│   └── requirements.txt     # Python dependencies
-│
-└── frontend/
-    ├── app/
-    │   ├── interrogation/   # Dedicated Full-Screen Voice Terminal & Battle Report
-    │   │   └── page.tsx
-    │   ├── api/             # Next.js API routes (deepgram, interrogation, rebuild)
-    │   ├── page.tsx         # Main Audit Dashboard & File Upload
-    │   └── layout.tsx       # Root layout & Metadata
-    ├── public/              # Matrix theme assets
-    ├── package.json         # Node.js dependencies
-    └── next.config.ts       # Next.js 16 configuration
+```text
+Resume PDF + job description
+  → /analyze: extract text and find a repository URL
+  → GitHub API: default branch → file tree → selected text blobs
+  → Groq: compare resume claims, repository evidence, and job requirements
+  → Dashboard: review results and choose the next action
+      ├─ Resume reconstruction → edit/select replacements → download PDF copy
+      └─ Interview → spoken answers → interview feedback
 ```
 
----
+### How GitHub evidence reaches the interview
 
-## 📦 Installation & Setup
+1. `backend/main.py` accepts a repository URL or finds the first repository URL in the extracted resume text. Profile-only links are skipped.
+2. `backend/ingest_github.py` detects the default branch unless the URL specifies a `/tree/...` branch. It downloads a bounded sample of text files.
+3. `/analyze` includes `resume_text`, `code`, `repo_url`, `job_description`, `has_github`, and interview metadata in its JSON result.
+4. The frontend saves that analysis in browser `sessionStorage` when the user opens the interview.
+5. The interview sends the analysis as the `context` field through `/api/interrogation` to backend `/chat`.
+6. `/chat` builds the model prompt from that request's snapshot. It does not use another upload's shared `current_user` record.
 
-### Prerequisites
-- **Node.js**: v18+ and `pnpm` (or `npm`)
-- **Python**: 3.11+
-- **API Keys**: Groq API Key, Deepgram API Key, NVIDIA API Key
+This handoff works after an unrelated upload or a backend worker restart. Missing or outdated context produces a request to analyze the resume again.
 
----
+`has_github` is true only after a successful fetch supplies usable evidence. A failed fetch produces `github_error`, leaves `code` empty, and uses resume-only interview mode. Failed fetches are not cached.
 
-### 1. Backend Setup
+### GitHub coverage and limits
+
+- Public repositories can be read without a token. A backend `GITHUB_TOKEN` provides authenticated access, subject to its permissions and API limits.
+- GitHub is the only supported code host today. The app does not search all repositories belonging to a profile.
+- A `/tree/...` URL treats the whole suffix as the branch name. Repository subfolder links are not resolved separately.
+- Supported text types include Python, JavaScript, TypeScript, Java, C/C++, C#, Go, Rust, SQL, Markdown, JSON, and notebooks.
+- The scraper skips configured dependency, build, asset, and test directories. It skips individual files larger than 150,000 bytes.
+- Each fetch includes at most 80 files and 50,000 characters. The last included file can be cut short. This is a sample, not a complete repository audit.
+- Requests have a 20-second timeout. An incomplete GitHub file tree, unreadable-only repository, or failed blob request produces an explicit error.
+- Successful repository samples use an in-memory cache with a one-hour lifetime and a 50-entry limit. Branch changes can remain cached until expiry.
+- Interview prompts include at most 12,000 resume characters, 12,000 job-description characters, and 50,000 code characters.
+- Resume URLs must appear in extracted text. Links present only in PDF annotations are not separately collected.
+
+GitHub documents the recursive tree limits and public-access rules in its [Git trees API reference](https://docs.github.com/en/rest/git/trees).
+
+## Technology and models
+
+| Part | Technology | Role |
+| --- | --- | --- |
+| Frontend | Next.js 16, React 19, TypeScript, Tailwind CSS 4 | Upload, review, interview, and PDF download screens. |
+| Backend | FastAPI, Python | Analysis, interview, reconstruction, and PDF endpoints. |
+| Analysis and generation | Groq `openai/gpt-oss-120b` | Resume review, interview questions, and resume suggestions. |
+| Validation and follow-up classification | Groq `openai/gpt-oss-20b` | Resume validation, project extraction, and answer classification. |
+| PDF text | PyMuPDF | Native text extraction and targeted PDF replacements. |
+| Scanned-page fallback | NVIDIA Nemotron OCR | Extract text from a rendered PDF page when native text is insufficient. |
+| Speech input | Deepgram Nova-2 | Stream microphone audio and return transcripts. |
+| Speech output | Deepgram Aura Athena | Read interview questions aloud. |
+
+The follow-up classifier currently returns `FOLLOW_UP_REQUIRED`, `SUFFICIENT`, or `SURRENDER`. Python selects the next interview topic from those results and the question history. JEV is a future milestone; the current classifier is unchanged.
+
+The readiness score uses section scores when available:
+
+```text
+round(0.40 × experience + 0.30 × skills + 0.15 × formatting + 0.15 × ATS compatibility)
+```
+
+The score is AI-assisted feedback, not a hiring decision or an independent verification result.
+
+## Local setup
+
+Use Python 3.11, Node.js 20.9 or newer, pnpm, and uv. The Render Blueprint specifies Python 3.11.8.
+
+### Backend
+
+From the repository root:
 
 ```bash
 cd backend
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
+uv venv venv --python 3.11
 source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
-Create a `.env` file inside `backend/`:
-```env
-GROQ_API_KEY=your_groq_api_key_here
-DEEPGRAM_API_KEY=your_deepgram_api_key_here
-NVIDIA_API_KEY=your_nvidia_api_key_here
-GITHUB_TOKEN=your_github_token_here  # Optional
+On Windows, activate the environment with `venv\Scripts\activate`.
+
+Create `backend/.env` with your own values:
+
+```dotenv
+GROQ_API_KEY=your_groq_key
+NVIDIA_API_KEY=your_nvidia_key
+DEEPGRAM_API_KEY=your_deepgram_key
+# Optional: authenticated GitHub access
+GITHUB_TOKEN=your_github_token
 ```
 
-Start the FastAPI server:
+Keep credentials out of source control. Revoke any token exposed in a chat, log, or public file.
+
 ```bash
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
-- **Backend API**: `http://127.0.0.1:8000`
-- **Swagger Documentation**: `http://127.0.0.1:8000/docs`
 
----
+Backend: `http://127.0.0.1:8000`. API documentation: `http://127.0.0.1:8000/docs`.
 
-### 2. Frontend Setup
+### Frontend
+
+In a second terminal, from the repository root:
 
 ```bash
 cd frontend
-
-# Install dependencies
 pnpm install
-
-# Create local environment file
-```
-Create `.env.local` inside `frontend/`:
-```env
-DEEPGRAM_API_KEY=your_deepgram_api_key_here
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 ```
 
-Start the Next.js dev server:
+Create `frontend/.env.local`:
+
+```dotenv
+NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8000
+DEEPGRAM_API_KEY=your_deepgram_key
+```
+
 ```bash
 pnpm dev
 ```
-- **Frontend App**: `http://localhost:3000`
-- **Voice Interrogation Terminal**: `http://localhost:3000/interrogation`
 
----
+Open `http://localhost:3000`. Upload a resume and job description before opening `/interrogation`.
 
-## 🔌 API Endpoints Reference
+Microphone access needs browser permission. The recorder chooses a supported format, including MP4 when WebM is unavailable. It waits for the final transcript before submitting an answer.
 
-| Endpoint | Method | Description |
-| :--- | :--- | :--- |
-| `POST /analyze` | `POST` | Cross-references uploaded PDF resume vs. GitHub repository & Job Description. |
-| `POST /chat` | `POST` | AI interrogation endpoint driven by a dynamic Python state machine. |
-| `POST /rebuild` | `POST` | Generates 3 STAR resume patches derived from the candidate's spoken defense. |
-| `GET /api/deepgram` | `GET` | Issue temporary Deepgram API tokens for client-side STT/TTS streaming. |
-| `POST /api/interrogation` | `POST` | Proxy handler for live two-phase voice interrogation turns. |
+The current `/api/deepgram` implementation returns the configured key to the browser for speech requests. It does not mint a temporary token. Restrict that key's permissions; replacing this mechanism is a future milestone.
 
----
+## Deployment
 
-## 🎨 UI Aesthetic & Design Philosophy
+`render.yaml` defines separate backend and frontend web services.
 
-- **Matrix Terminal Aesthetic**: Deep dark mode (`#000000`), neon green highlights (`#00FF41`), and high-contrast red alert indicators (`#EF4444`).
-- **CMD Block Cursor**: Sharp rectangular terminal I-beam block cursors (`█`) with glowing aura animations.
-- **Full Transparency**: No silent swallows or dummy score fallbacks.
+| Setting | Backend | Frontend |
+| --- | --- | --- |
+| Root directory | `backend` | `frontend` |
+| Build command | `pip install -r requirements.txt` | `pnpm install && pnpm build` |
+| Start command | `uvicorn main:app --host 0.0.0.0 --port $PORT` | `pnpm start` |
 
----
+Set service credentials in the hosting provider's environment settings. The frontend requires `DEEPGRAM_API_KEY` and `NEXT_PUBLIC_BACKEND_URL`.
 
-## 📄 License
+The current default backend URL is `https://sparta-1l4n.onrender.com`. Set `NEXT_PUBLIC_BACKEND_URL` to override it. Rebuild the frontend after changing a public environment variable.
 
-Distributed under the **MIT License**. See `LICENSE` for details.
+## Automated checks
 
-<div align="center">
+The deterministic tests below use generated fixtures and mocked service responses. They do not need real API keys, a running server, or paid model calls.
 
-**S.P.A.R.T.A. Engine — Battle-Tested Software Engineering**
+From `backend/`, with its environment activated:
 
-</div>
+```bash
+python -m unittest -v test_github_context test_reconstruction test_resume_pdf
+```
+
+`test_github_context.py` checks public access, authenticated requests, branch selection, file filters, HTTP failures, timeouts, cache behavior, and missing evidence. It follows an analysis result into the real interview prompt and checks that another upload cannot replace its evidence.
+
+The other two suites check reconstruction responses and targeted PDF replacements, including page preservation and rejection of ambiguous matches.
+
+From `frontend/`:
+
+```bash
+node --test tests/*.test.cjs
+pnpm exec tsc --noEmit
+```
+
+`interview-context.test.cjs` exercises the actual Next.js proxy with a mocked backend. It checks complete context forwarding, the backend URL, and actionable error responses. `speech-recorder.test.cjs` checks format fallback, transcript finalization, failures, and resource cleanup.
+
+Older scripts such as `backend/test_api.py`, `backend/test_eval.py`, and `backend/test_glm.py` are manual service probes. They can need local files, running services, or live credentials. They are separate from the offline test command.
+
+Mocked tests establish the application contract. They do not measure model quality, prove private-repository permissions, or verify a user's physical microphone.
+
+## Repository map
+
+```text
+backend/
+  main.py                    FastAPI routes and analysis/interview handoff
+  brain.py                   Groq prompts, scoring, and interview progression
+  ingest_github.py            GitHub tree and blob ingestion
+  pipeline.py                 Native PDF extraction and NVIDIA OCR fallback
+  resume_pdf.py               Targeted bullet replacement in PDF copies
+  ingest_pdf.py               Separate pypdf parser
+  test_github_context.py     GitHub and interview-context regression tests
+  test_reconstruction.py     Reconstruction response tests
+  test_resume_pdf.py         PDF replacement tests
+frontend/
+  app/page.tsx               Upload, dashboard, and reconstruction screens
+  app/interrogation/page.tsx Voice interview and feedback
+  app/api/                   Backend proxies and speech credential route
+  app/components/            Logo, theme switch, and animated text
+  app/hooks/                 Shared microphone hook
+  app/lib/                   Microphone recording lifecycle
+  tests/                     Recorder and interview proxy tests
+  public/                    Website assets
+render.yaml                  Render service configuration
+```
+
+## Current boundaries
+
+- Main analysis currently extracts the first PDF page. The separate pypdf parser reads all pages, but `/analyze` does not use it.
+- Interview evidence lives in the browser's analysis snapshot. Source text therefore reaches the browser and session storage.
+- Some legacy endpoints, including `/add_repo`, `/interview_start`, and `/generate_resume`, still use shared process memory. The main `/chat` handoff does not.
+- Repository contents and model responses can be incomplete or incorrect. Review suggestions before using them.
+- PDF replacements need a unique original match and enough space. They can be rejected when a replacement cannot fit. Exact source-font matching is not guaranteed.
+
+## Future scope and milestones
+
+These items are planned, not implemented:
+
+- [ ] **More code hosts:** Add GitLab, Codeberg, and other Git hosting providers, including Forgejo/Gitea and self-hosted services. Use a shared provider interface for URL parsing, permissions, branches, file trees, and evidence errors.
+- [ ] **JEV follow-up evaluation:** Define JEV's provider/model or evaluation contract, then compare it with the current light-model classifier before replacing it. Add classification and interview-progression regression tests.
+- [ ] **Broader repository evidence:** Support multiple project URLs, explicit repository selection, full-tree pagination, commit history, and evidence citations.
+- [ ] **PDF coverage:** Extract every resume page and collect embedded repository links. Improve font preservation and preview replacements before download.
+- [ ] **Session storage:** Replace remaining shared legacy state with isolated, persistent analysis/interview sessions and expiry controls.
+- [ ] **Speech access:** Replace browser delivery of the configured Deepgram key with scoped temporary access or a server-mediated speech connection.
+- [ ] **Evaluation and CI:** Add optional live integration checks, model-quality datasets, and automated checks in continuous integration.

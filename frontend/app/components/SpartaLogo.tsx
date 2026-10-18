@@ -2,7 +2,7 @@ import Image from "next/image";
 
 export default function SpartaLogo({
   alt = "",
-  className = "h-10 w-auto shrink-0",
+  className = "h-12 sm:h-14 w-auto shrink-0",
 }: {
   alt?: string;
   className?: string;
