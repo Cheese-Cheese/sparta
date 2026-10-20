@@ -384,23 +384,23 @@ function StickyNav({ onReset }: { onReset?: () => void }) {
 
   return (
     <div className="sticky top-0 z-50 bg-surface border-b-2 border-line">
-      <div className="max-w-7xl mx-auto px-5 sm:px-8 h-18 flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-5 sm:px-8 min-h-20 sm:min-h-22 py-2.5 flex items-center justify-between">
         {/* Left */}
         {onReset ? (
           <button
             onClick={onReset}
-            className="flex items-center gap-2 cursor-pointer hover:opacity-80 transition-all group focus:outline-none"
+            className="plain-button flex items-center gap-3.5 cursor-pointer hover:opacity-80 transition-opacity group focus:outline-none bg-transparent border-0 !border-none shadow-none !shadow-none p-0"
             title="Return to Home"
           >
             <SpartaLogo />
-            <span className="text-sm font-bold tracking-wide text-ink uppercase group-hover:text-brand transition-colors">
+            <span className="text-2xl sm:text-3xl font-black tracking-[0.14em] text-ink uppercase group-hover:text-brand transition-colors">
               S.P.A.R.T.A.
             </span>
           </button>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3.5">
             <SpartaLogo />
-            <span className="text-sm font-bold tracking-[0.12em] text-ink uppercase">
+            <span className="text-2xl sm:text-3xl font-black tracking-[0.14em] text-ink uppercase">
               S.P.A.R.T.A.
             </span>
           </div>
@@ -1312,7 +1312,7 @@ export default function HomePage() {
           className="upload-brand flex items-center gap-3"
         >
           <SpartaLogo />
-          <span className="text-sm font-bold tracking-[0.12em] text-ink uppercase">
+          <span className="text-2xl sm:text-3xl font-black tracking-[0.14em] text-ink uppercase">
             S.P.A.R.T.A.
           </span>
         </motion.div>

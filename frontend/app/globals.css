@@ -2,29 +2,29 @@
 
 /* Presentation tokens shared by review, reconstruction, and interview screens. */
 @theme {
-  --color-canvas: #eef2f4;
-  --color-surface: #f9fbfc;
-  --color-tint: #e2e9ed;
-  --color-line: #596d79;
-  --color-ink: #162632;
-  --color-copy: #334b5a;
-  --color-muted: #526874;
-  --color-brand: #2c4676;
-  --color-brand-hover: #20375e;
-  --color-brand-soft: #e5edf8;
-  --color-on-brand: #f9fbfc;
-  --color-accent: #64d6e0;
-  --color-accent-hover: #58c2d1;
-  --color-accent-soft: #def4f6;
-  --color-on-accent: #112d36;
-  --color-secondary: #31558c;
-  --color-secondary-soft: #e4ebf5;
+  --color-canvas: #f4f4f6;
+  --color-surface: #ffffff;
+  --color-tint: #eaebee;
+  --color-line: #424245;
+  --color-ink: #121214;
+  --color-copy: #2c2c2f;
+  --color-muted: #5a5a5e;
+  --color-brand: #be123c;
+  --color-brand-hover: #9f1239;
+  --color-brand-soft: #ffe4e6;
+  --color-on-brand: #ffffff;
+  --color-accent: #e11d48;
+  --color-accent-hover: #be123c;
+  --color-accent-soft: #ffe4e6;
+  --color-on-accent: #ffffff;
+  --color-secondary: #475569;
+  --color-secondary-soft: #f1f5f9;
   --color-danger: #9b2c2c;
   --color-danger-soft: #fceeee;
   --color-warning: #755500;
   --color-warning-soft: #fff5d9;
-  --color-info: #2c4676;
-  --color-info-soft: #e4ebf5;
+  --color-info: #be123c;
+  --color-info-soft: #ffe4e6;
   --color-overlay: rgb(0 0 0 / 45%);
   --font-sans: var(--font-geist-sans), Arial, Helvetica, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
@@ -37,37 +37,59 @@
   --foreground: var(--color-ink);
   --button-highlight: rgb(255 255 255 / 85%);
   --button-shadow: rgb(0 0 0 / 45%);
+
+  /* Sparta Shield Logo: Charcoal / Gunmetal Palette in Light Mode */
+  --logo-metal-0: #475569;
+  --logo-metal-50: #334155;
+  --logo-metal-100: #0f172a;
+  --logo-metal-facet-0: #64748b;
+  --logo-metal-facet-100: #1e293b;
+  --logo-metal-rim-0: #94a3b8;
+  --logo-metal-rim-100: #334155;
+  --logo-metal-dome-0: #64748b;
+  --logo-metal-dome-100: #334155;
 }
 :root[data-theme="dark"] {
-  /* Silver, cyan, and blue drawn from the Spartan shield artwork. */
+  /* Silver and crimson drawn from the Spartan shield artwork. */
   color-scheme: dark;
-  --color-canvas: #0b1016;
-  --color-surface: #121b24;
-  --color-tint: #1b2935;
-  --color-line: #62798a;
-  --color-ink: #e8edf0;
-  --color-copy: #c8d2d9;
-  --color-muted: #a4b5c1;
-  --color-brand: #64d6e0;
-  --color-brand-hover: #7ee8eb;
-  --color-brand-soft: #142f39;
-  --color-on-brand: #0b2028;
-  --color-accent: #64d6e0;
-  --color-accent-hover: #7ee8eb;
-  --color-accent-soft: #142f39;
-  --color-on-accent: #0b2028;
-  --color-secondary: #9ebbe1;
-  --color-secondary-soft: #1c2c43;
+  --color-canvas: #0b0b0e;
+  --color-surface: #151518;
+  --color-tint: #202024;
+  --color-line: #676169;
+  --color-ink: #f4f0f0;
+  --color-copy: #d4cfd2;
+  --color-muted: #aaa2a8;
+  --color-brand: #ff5a70;
+  --color-brand-hover: #ff7587;
+  --color-brand-soft: #29151b;
+  --color-on-brand: #10090b;
+  --color-accent: #b9253c;
+  --color-accent-hover: #cf3048;
+  --color-accent-soft: #29151b;
+  --color-on-accent: #fff5f6;
+  --color-secondary: #cbd5e1;
+  --color-secondary-soft: #1e293b;
   --color-danger: #ffb4ac;
   --color-danger-soft: #302222;
   --color-warning: #e9cd90;
   --color-warning-soft: #302b20;
-  --color-info: #9ebbe1;
-  --color-info-soft: #1c2c43;
+  --color-info: #ff7587;
+  --color-info-soft: #29151b;
   --color-overlay: rgb(0 0 0 / 75%);
   --shadow-panel: none;
   --button-highlight: rgb(255 255 255 / 40%);
   --button-shadow: rgb(0 0 0 / 75%);
+
+  /* Sparta Shield Logo: Polished Silver Palette in Dark Mode */
+  --logo-metal-0: #f1f5f9;
+  --logo-metal-50: #94a3b8;
+  --logo-metal-100: #475569;
+  --logo-metal-facet-0: #cbd5e1;
+  --logo-metal-facet-100: #64748b;
+  --logo-metal-rim-0: #ffffff;
+  --logo-metal-rim-100: #94a3b8;
+  --logo-metal-dome-0: #e2e8f0;
+  --logo-metal-dome-100: #94a3b8;
 }
 body {
   margin: 0;
@@ -82,7 +104,7 @@ button:disabled { cursor: not-allowed; }
 button, a, input, textarea { transition-duration: 180ms; }
 button, a { -webkit-tap-highlight-color: transparent; }
 /* Windows 95-style bevels reverse while a pointer or keyboard press is held. */
-button:not(.close-button), .retro-button {
+button:not(.close-button):not(.plain-button), .retro-button {
   border-radius: 0;
   box-shadow:
     inset 2px 2px 0 var(--button-highlight),
@@ -91,7 +113,7 @@ button:not(.close-button), .retro-button {
   transition-property: background-color, color, border-color, box-shadow, translate;
   transition-duration: 120ms;
 }
-button:active:not(:disabled):not(.close-button),
+button:active:not(:disabled):not(.close-button):not(.plain-button),
 :is(a, button).retro-button:active:not([aria-disabled="true"]),
 .upload-dropzone.cursor-pointer:active .retro-button {
   box-shadow:
@@ -100,7 +122,7 @@ button:active:not(:disabled):not(.close-button),
   translate: 1px 1px;
   transition-duration: 0ms;
 }
-button:disabled:not(.close-button), .retro-button[aria-disabled="true"] {
+button:disabled:not(.close-button):not(.plain-button), .retro-button[aria-disabled="true"] {
   box-shadow: inset 0 0 0 1px var(--button-shadow);
   translate: none;
 }
@@ -207,4 +229,13 @@ button[class*="bg-accent"] { border: 1px solid var(--color-line); }
 @media (max-width: 767px) {
   .upload-workspace { box-shadow: 3px 3px 0 var(--color-line); }
   .upload-hero { padding-top: 20px; }
+}
+
+.plain-button {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  translate: none !important;
+  padding: 0 !important;
+  outline: none !important;
 }

@@ -382,8 +382,8 @@ export default function InterrogationPage() {
           </Link>
           <div className="h-4 w-px bg-line" />
           <div className="flex items-center gap-2">
-            <SpartaLogo alt="S.P.A.R.T.A. logo" className="h-10 sm:h-12 w-auto shrink-0" />
-            <h1 className="font-mono font-bold tracking-wide text-xs uppercase">Interview practice</h1>
+            <SpartaLogo alt="S.P.A.R.T.A. logo" className="h-11 sm:h-13 w-auto shrink-0" />
+            <h1 className="font-mono font-bold tracking-wide text-sm sm:text-base uppercase">Interview practice</h1>
           </div>
         </div>
 
