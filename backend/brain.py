@@ -5,6 +5,7 @@ import logging
 from groq import Groq
 from dotenv import load_dotenv
 from datetime import datetime
+from resume_limits import MAX_RESUME_CHARS
 
 load_dotenv()
 
@@ -112,7 +113,7 @@ def analyze_resume_vs_code(resume_text, code_context, project_name=None, job_des
     {project_focus}
     {jd_focus}
     
-    RESUME CLAIMS: {resume_text[:4000]}
+    RESUME CLAIMS: {resume_text[:MAX_RESUME_CHARS]}
     CODE EVIDENCE: {code_context[:30000]}
     
     Audit Protocol: Compare the grand claims in the resume to the actual reality of the code and the demands of the Job Description. 

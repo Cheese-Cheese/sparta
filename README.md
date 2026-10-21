@@ -21,6 +21,16 @@ Repository evidence helps the interviewer ask specific technical questions. It d
 
 Dashboard reconstruction and interview feedback are separate operations. Interview suggestions do not automatically change the uploaded PDF.
 
+### Resume PDF support
+
+`/analyze` reads every page, in order, for PDFs of up to **20 pages**, **10 MB**, and **60,000 extracted characters**. These limits support ordinary resumes and longer CVs while bounding OCR work and model input.
+
+Native text pages use PyMuPDF. Pages that need OCR use NVIDIA Nemotron individually. Mixed digital/scanned documents are supported, and empty pages are skipped. Digital PDFs do not require an NVIDIA key.
+
+Oversized, unreadable, and password-protected documents return clear errors. An OCR failure identifies the affected page. The endpoint never returns a successful partial extraction after a page fails or a limit is exceeded.
+
+The resume review and interview both receive the accepted document's complete extracted text, up to the same 60,000-character limit. OCR quality still depends on scan clarity.
+
 ## Main flow
 
 ```text
@@ -56,7 +66,7 @@ This handoff works after an unrelated upload or a backend worker restart. Missin
 - Each fetch includes at most 80 files and 50,000 characters. The last included file can be cut short. This is a sample, not a complete repository audit.
 - Requests have a 20-second timeout. An incomplete GitHub file tree, unreadable-only repository, or failed blob request produces an explicit error.
 - Successful repository samples use an in-memory cache with a one-hour lifetime and a 50-entry limit. Branch changes can remain cached until expiry.
-- Interview prompts include at most 12,000 resume characters, 12,000 job-description characters, and 50,000 code characters.
+- Interview prompts include at most 60,000 resume characters, 12,000 job-description characters, and 50,000 code characters.
 - Resume URLs must appear in extracted text. Links present only in PDF annotations are not separately collected.
 
 GitHub documents the recursive tree limits and public-access rules in its [Git trees API reference](https://docs.github.com/en/rest/git/trees).
@@ -166,10 +176,12 @@ The deterministic tests below use generated fixtures and mocked service response
 From `backend/`, with its environment activated:
 
 ```bash
-python -m unittest -v test_github_context test_reconstruction test_resume_pdf
+python -m unittest -v test_pdf_extraction test_github_context test_reconstruction test_resume_pdf
 ```
 
 `test_github_context.py` checks public access, authenticated requests, branch selection, file filters, HTTP failures, timeouts, cache behavior, and missing evidence. It follows an analysis result into the real interview prompt and checks that another upload cannot replace its evidence.
+
+`test_pdf_extraction.py` uses generated PDFs to check all 20 pages, mixed digital/scanned content, short and empty pages, limits, OCR failures, and invalid documents. It verifies that a later-page GitHub URL and text beyond the old prompt limits reach analysis and interview context.
 
 The other two suites check reconstruction responses and targeted PDF replacements, including page preservation and rejection of ambiguous matches.
 
@@ -194,11 +206,13 @@ backend/
   brain.py                   Groq prompts, scoring, and interview progression
   ingest_github.py            GitHub tree and blob ingestion
   pipeline.py                 Native PDF extraction and NVIDIA OCR fallback
+  resume_limits.py           Shared page, file-size, and text budgets
   resume_pdf.py               Targeted bullet replacement in PDF copies
   ingest_pdf.py               Separate pypdf parser
   test_github_context.py     GitHub and interview-context regression tests
   test_reconstruction.py     Reconstruction response tests
   test_resume_pdf.py         PDF replacement tests
+  test_pdf_extraction.py     Multi-page extraction and analysis tests
 frontend/
   app/page.tsx               Upload, dashboard, and reconstruction screens
   app/interrogation/page.tsx Voice interview and feedback
@@ -213,7 +227,7 @@ render.yaml                  Render service configuration
 
 ## Current boundaries
 
-- Main analysis currently extracts the first PDF page. The separate pypdf parser reads all pages, but `/analyze` does not use it.
+- Resume PDF support is bounded to 20 pages, 10 MB, and 60,000 extracted characters. Larger documents are rejected rather than partly analyzed.
 - Interview evidence lives in the browser's analysis snapshot. Source text therefore reaches the browser and session storage.
 - Some legacy endpoints, including `/add_repo`, `/interview_start`, and `/generate_resume`, still use shared process memory. The main `/chat` handoff does not.
 - Repository contents and model responses can be incomplete or incorrect. Review suggestions before using them.
@@ -226,7 +240,7 @@ These items are planned, not implemented:
 - [ ] **More code hosts:** Add GitLab, Codeberg, and other Git hosting providers, including Forgejo/Gitea and self-hosted services. Use a shared provider interface for URL parsing, permissions, branches, file trees, and evidence errors.
 - [ ] **JEV follow-up evaluation:** Define JEV's provider/model or evaluation contract, then compare it with the current light-model classifier before replacing it. Add classification and interview-progression regression tests.
 - [ ] **Broader repository evidence:** Support multiple project URLs, explicit repository selection, full-tree pagination, commit history, and evidence citations.
-- [ ] **PDF coverage:** Extract every resume page and collect embedded repository links. Improve font preservation and preview replacements before download.
+- [ ] **PDF improvements:** Collect embedded repository links, improve font preservation, and preview replacements before download. Multi-page extraction is implemented within the documented limits.
 - [ ] **Session storage:** Replace remaining shared legacy state with isolated, persistent analysis/interview sessions and expiry controls.
 - [ ] **Speech access:** Replace browser delivery of the configured Deepgram key with scoped temporary access or a server-mediated speech connection.
 - [ ] **Evaluation and CI:** Add optional live integration checks, model-quality datasets, and automated checks in continuous integration.

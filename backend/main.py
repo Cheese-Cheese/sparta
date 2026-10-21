@@ -14,6 +14,7 @@ import io
 import time
 import logging
 import asyncio
+import tempfile
 from urllib.parse import unquote, urlsplit
 from collections import OrderedDict
 
@@ -61,7 +62,8 @@ import ingest_github
 import brain
 
 # --- NEW: S.P.A.R.T.A. HYBRID ENGINE IMPORTS ---
-from pipeline import extract_text_intelligently, analyze_with_groq
+from pipeline import extract_text_intelligently, analyze_with_groq, ResumeExtractionError
+from resume_limits import MAX_RESUME_BYTES, MAX_RESUME_CHARS
 from resume_pdf import replace_resume_bullets
 
 load_dotenv()
@@ -399,17 +401,18 @@ async def analyze_portfolio(
 
     logger.info(f"📥 Received Analysis Request.")
     logger.info(f"   📁 Selected Project: {project_name or 'None specified'}")
-    temp_filename = f"temp_{file.filename}"
-    
+    temp_filename = None
+
     try:
-        with open(temp_filename, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        pdf_bytes = await file.read(MAX_RESUME_BYTES + 1)
+        if len(pdf_bytes) > MAX_RESUME_BYTES:
+            raise HTTPException(status_code=413, detail="The resume PDF must be 10 MB or smaller.")
+        with tempfile.NamedTemporaryFile(prefix="sparta-resume-", suffix=".pdf", delete=False) as buffer:
+            temp_filename = buffer.name
+            buffer.write(pdf_bytes)
 
-        nvidia_key = os.getenv("NVIDIA_API_KEY")
-        if not nvidia_key:
-             raise HTTPException(status_code=500, detail="CRITICAL: Missing NVIDIA API Key")
-
-        # 🚀 MAGIC: Using our Hybrid Engine for Analysis Phase
+        # Digital PDFs need no OCR credential; scanned pages check it when needed.
+        nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         resume_text = extract_text_intelligently(temp_filename, nvidia_key)
         
         is_valid, rejection_reason = brain.validate_is_resume(resume_text)
@@ -490,11 +493,15 @@ async def analyze_portfolio(
             "initial_chat": chat_msg
         }
 
+    except HTTPException:
+        raise
+    except ResumeExtractionError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except Exception as e:
         logger.error(f"Error in analyze_portfolio: {e}")
         return {"status": "error", "message": str(e)}
     finally:
-        if os.path.exists(temp_filename):
+        if temp_filename and os.path.exists(temp_filename):
             try:
                 os.remove(temp_filename)
             except Exception as remove_err:
@@ -557,7 +564,7 @@ async def chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=400, detail='Invalid job description in interview context.')
     # Each browser sends its own analysis snapshot; never use another upload's DB record.
     context_summary = (
-        f"--- RESUME ---\n{context['resume_text'][:12000]}\n"
+        f"--- RESUME ---\n{context['resume_text'][:MAX_RESUME_CHARS]}\n"
         f"--- JOB DESCRIPTION ---\n{job_description[:12000]}\n"
         f"--- REPOSITORY ---\n{context.get('repo_url') or 'None'}\n"
         f"--- CODE EVIDENCE ---\n{code[:50000] or 'NO CODE PROVIDED. Interview from resume claims only.'}"
