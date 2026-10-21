@@ -14,12 +14,13 @@ import io
 import time
 import logging
 import asyncio
+import tempfile
 from urllib.parse import unquote, urlsplit
 from collections import OrderedDict
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import List, Literal, Optional
 from dotenv import load_dotenv
@@ -61,8 +62,11 @@ import ingest_github
 import brain
 
 # --- NEW: S.P.A.R.T.A. HYBRID ENGINE IMPORTS ---
-from pipeline import extract_text_intelligently, analyze_with_groq
+from pipeline import extract_text_intelligently, analyze_with_groq, ResumeExtractionError
+from resume_limits import MAX_RESUME_BYTES, MAX_RESUME_CHARS
+from analysis_context import parse_analysis_context, MAX_CODE_CONTEXT_CHARS
 from resume_pdf import replace_resume_bullets
+from model_output import ModelOutputError, validate_audit
 
 load_dotenv()
 
@@ -72,6 +76,11 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+
+@app.exception_handler(ModelOutputError)
+async def model_output_error_handler(request, error):
+    return JSONResponse(status_code=502, content={'detail': str(error)})
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -79,8 +88,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-DB = {}
 
 # --- LRU CACHE WITH TTL ---
 class LRUCache:
@@ -128,12 +135,14 @@ class LRUCache:
 
 REPO_CACHE = LRUCache(max_size=50, ttl_seconds=3600)
 
-class ChatRequest(BaseModel):
-    message: str
-    history: List[dict] = []
+class AnalysisContextRequest(BaseModel):
     context: str = ""
 
-class RepoRequest(BaseModel):
+class ChatRequest(AnalysisContextRequest):
+    message: str
+    history: List[dict] = []
+
+class RepoRequest(AnalysisContextRequest):
     github_url: str
 
     @field_validator('github_url')
@@ -332,17 +341,21 @@ async def extract_projects(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=error_msg)
 
     logger.info(f"📥 Extracting projects from resume using Hybrid Engine: {file.filename}")
-    temp_filename = f"temp_{file.filename}"
+    temp_filename = None
 
     try:
-        with open(temp_filename, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        pdf_bytes = await file.read(MAX_RESUME_BYTES + 1)
+        if len(pdf_bytes) > MAX_RESUME_BYTES:
+            raise HTTPException(status_code=413, detail="The resume PDF must be 10 MB or smaller.")
+        with tempfile.NamedTemporaryFile(prefix="sparta-projects-", suffix=".pdf", delete=False) as buffer:
+            temp_filename = buffer.name
+            buffer.write(pdf_bytes)
 
-        nvidia_key = os.getenv("NVIDIA_API_KEY")
+        nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         groq_key = os.getenv("GROQ_API_KEY")
         
-        if not nvidia_key or not groq_key:
-             raise HTTPException(status_code=500, detail="CRITICAL: Missing NVIDIA or GROQ API Keys in .env")
+        if not groq_key:
+             raise HTTPException(status_code=500, detail="GROQ_API_KEY is required for project extraction.")
 
         # 1. High-Speed Extraction
         resume_text = extract_text_intelligently(temp_filename, nvidia_key)
@@ -364,11 +377,10 @@ async def extract_projects(file: UploadFile = File(...)):
                   projects = item.get("projects", item.get("description", []))
                   break
 
-        DB['pending_resume'] = resume_text
-
         return {
             "status": "success",
             "projects": projects,
+            "resume_text": resume_text,
             "resume_preview": resume_text[:500] + "..."
         }
     except HTTPException:
@@ -377,7 +389,7 @@ async def extract_projects(file: UploadFile = File(...)):
         logger.error(f"Error extracting projects: {e}")
         return {"status": "error", "message": str(e)}
     finally:
-        if os.path.exists(temp_filename):
+        if temp_filename and os.path.exists(temp_filename):
             os.remove(temp_filename)
 
 @app.post("/analyze")
@@ -399,17 +411,18 @@ async def analyze_portfolio(
 
     logger.info(f"📥 Received Analysis Request.")
     logger.info(f"   📁 Selected Project: {project_name or 'None specified'}")
-    temp_filename = f"temp_{file.filename}"
-    
+    temp_filename = None
+
     try:
-        with open(temp_filename, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        pdf_bytes = await file.read(MAX_RESUME_BYTES + 1)
+        if len(pdf_bytes) > MAX_RESUME_BYTES:
+            raise HTTPException(status_code=413, detail="The resume PDF must be 10 MB or smaller.")
+        with tempfile.NamedTemporaryFile(prefix="sparta-resume-", suffix=".pdf", delete=False) as buffer:
+            temp_filename = buffer.name
+            buffer.write(pdf_bytes)
 
-        nvidia_key = os.getenv("NVIDIA_API_KEY")
-        if not nvidia_key:
-             raise HTTPException(status_code=500, detail="CRITICAL: Missing NVIDIA API Key")
-
-        # 🚀 MAGIC: Using our Hybrid Engine for Analysis Phase
+        # Digital PDFs need no OCR credential; scanned pages check it when needed.
+        nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         resume_text = extract_text_intelligently(temp_filename, nvidia_key)
         
         is_valid, rejection_reason = brain.validate_is_resume(resume_text)
@@ -430,7 +443,7 @@ async def analyze_portfolio(
         if target_url:
             print(f"   🎯 Using selected project URL: {target_url}")
         else:
-            print(f"   ⚠️ No GitHub URL provided - analyzing resume claims only (PHANTOMWARE CHECK)")
+            print(f"   ⚠️ No GitHub URL provided - analyzing unverified resume claims only")
 
         code_context = ""
         github_error = None
@@ -458,31 +471,14 @@ async def analyze_portfolio(
             code_context = 'NO CODE PROVIDED. Repository evidence is unavailable. Evaluate resume claims without claiming code verification.'
 
         analysis_json = brain.analyze_resume_vs_code(resume_text, code_context, project_name, job_description)
-        
-        import json
-        try:
-            data = json.loads(analysis_json)
-            data["resume_text"] = resume_text
-            data["has_github"] = has_github
-            data["code"] = code_context[:50000] if has_github else ""
-            data["repo_url"] = target_url if has_github else None
-            data["job_description"] = job_description
-            data["github_error"] = github_error
-            analysis_json = json.dumps(data)
-            
-            critique = "\n".join([f"- {x}" for x in data.get("project_critique", [])])
-            claims = "\n".join([f"- {x}" for x in data.get("false_claims", [])])
-            suggestions = "\n".join([f"- {x}" for x in data.get("resume_suggestions", [])])
-            
-            chat_msg = f"**REAL WORLD CRITIQUE:**\n{critique}\n\n**FALSE CLAIMS / VERIFICATION:**\n{claims}\n\n**RESUME ADDITIONS:**\n{suggestions}"
-        except:
-            chat_msg = "Analysis Complete. Check Dashboard for details."
-
-        DB['current_user'] = {
-            "resume": resume_text,
-            "code": code_context[:50000],
-            "analysis": analysis_json
-        }
+        data = validate_audit(analysis_json, code_context if has_github else '')
+        data.update(resume_text=resume_text, has_github=has_github,
+                    code=str(code_context[:50000]) if has_github else '',
+                    repo_url=target_url if has_github else None, job_description=job_description,
+                    github_error=github_error,
+                    repository_coverage=ingest_github.evidence_coverage(code_context if has_github else ''))
+        analysis_json = json.dumps(data)
+        chat_msg = 'Analysis ready. Review the feedback and source quotes before using suggestions.'
 
         return {
             "status": "success",
@@ -490,11 +486,17 @@ async def analyze_portfolio(
             "initial_chat": chat_msg
         }
 
+    except HTTPException:
+        raise
+    except ModelOutputError:
+        raise
+    except ResumeExtractionError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except Exception as e:
         logger.error(f"Error in analyze_portfolio: {e}")
         return {"status": "error", "message": str(e)}
     finally:
-        if os.path.exists(temp_filename):
+        if temp_filename and os.path.exists(temp_filename):
             try:
                 os.remove(temp_filename)
             except Exception as remove_err:
@@ -502,6 +504,7 @@ async def analyze_portfolio(
 
 @app.post("/add_repo")
 async def add_repo_context(request: RepoRequest):
+    context = parse_analysis_context(request.context)
     print(f"📥 Adding Repo: {request.github_url}")
     try:
         owner, repo, branch = extract_github_details(request.github_url)
@@ -520,46 +523,54 @@ async def add_repo_context(request: RepoRequest):
                 REPO_CACHE.set(cache_key, code_context)
 
         if not code_context:
-            return {"status": "error", "bullets": "⚠️ ACCESS DENIED: Repo is empty, Private, or Branch not found."}
+            raise HTTPException(status_code=502, detail="Repository evidence is unavailable. Check the repository and retry.")
 
         bullets = brain.generate_star_bullets(code_context)
 
-        if 'current_user' in DB:
-            DB['current_user']['code'] += f"\n\n--- NEW REPO: {repo} ---\n{code_context[:20000]}"
+        # Prioritize the new repository, then retain older evidence within the budget.
+        addition = f"--- NEW REPO: {owner}/{repo} ---\n{code_context[:20000]}"
+        previous = context.get('code', '')
+        combined = f"{addition}\n\n{previous}" if previous else addition
+        context['code'] = combined[:MAX_CODE_CONTEXT_CHARS]
+        context['has_github'] = True
+        context['repo_url'] = request.github_url
+        context['github_error'] = None
+        # Old and new samples may be trimmed here; do not retain stale audit citations.
+        context['evidence_checks'] = []
+        context['repository_coverage'] = {
+            'status': 'partial', 'reason': 'Combined repository context; original audit was not rerun.',
+            'added_repository': ingest_github.evidence_coverage(code_context),
+            'context_truncated': len(code_context) > 20000 or len(combined) > MAX_CODE_CONTEXT_CHARS,
+        }
 
-        return {"status": "success", "bullets": bullets}
+        return {"status": "success", "bullets": bullets, "context": context,
+                "context_truncated": len(code_context) > 20000 or len(combined) > MAX_CODE_CONTEXT_CHARS}
 
+    except HTTPException:
+        raise
+    except ingest_github.GitHubFetchError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
     except Exception as e:
         logger.error(f"Error in add_repo_context: {e}")
-        return {"status": "error", "message": str(e)}
+        raise HTTPException(status_code=502, detail="Could not add repository evidence. Please retry.") from e
 
 @app.post("/interview_start")
-async def start_interview():
-    user_data = DB.get('current_user')
-    if not user_data:
-        return {"status": "error", "message": "No data found."}
-    question = brain.generate_interview_challenge(user_data['code'], user_data['analysis'])
+async def start_interview(request: AnalysisContextRequest):
+    context = parse_analysis_context(request.context)
+    question = brain.generate_interview_challenge(context.get('code', ''), json.dumps(context))
     return {"status": "success", "question": question}
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    try:
-        context = json.loads(request.context)
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail='Invalid interview context. Analyze the resume again.')
-    if not isinstance(context, dict) or not isinstance(context.get('resume_text'), str) or not context['resume_text'].strip():
-        raise HTTPException(status_code=409, detail='Resume context is missing. Analyze the resume again.')
+    context = parse_analysis_context(request.context)
     code = context.get('code', '')
-    if not isinstance(code, str) or (context.get('has_github') and not code.strip()):
-        raise HTTPException(status_code=409, detail='Repository context is missing. Analyze the resume again.')
     job_description = context.get('job_description', '')
-    if not isinstance(job_description, str):
-        raise HTTPException(status_code=400, detail='Invalid job description in interview context.')
-    # Each browser sends its own analysis snapshot; never use another upload's DB record.
+    # Build evidence solely from this request's analysis snapshot.
     context_summary = (
-        f"--- RESUME ---\n{context['resume_text'][:12000]}\n"
+        f"--- RESUME ---\n{context['resume_text'][:MAX_RESUME_CHARS]}\n"
         f"--- JOB DESCRIPTION ---\n{job_description[:12000]}\n"
         f"--- REPOSITORY ---\n{context.get('repo_url') or 'None'}\n"
+        f"--- EVIDENCE COVERAGE ---\n{json.dumps(context.get('repository_coverage', {'status': 'unknown'}))}\n"
         f"--- CODE EVIDENCE ---\n{code[:50000] or 'NO CODE PROVIDED. Interview from resume claims only.'}"
     )
 
@@ -572,11 +583,9 @@ async def chat_endpoint(request: ChatRequest):
     return {"response": response_text}
 
 @app.post("/generate_resume")
-async def generate_resume_endpoint():
-    user_data = DB.get('current_user')
-    if not user_data:
-        return {"response": "⚠️ ERROR: No data found."}
-    new_resume = brain.generate_ats_resume(user_data['resume'], user_data['code'])
+async def generate_resume_endpoint(request: AnalysisContextRequest):
+    context = parse_analysis_context(request.context)
+    new_resume = brain.generate_ats_resume(context['resume_text'], context.get('code', ''))
     return {"status": "success", "resume": new_resume}
 
 from brain import reconstruct_resume

@@ -4,6 +4,7 @@ import base64
 import requests
 import fitz  # PyMuPDF
 from groq import Groq
+from resume_limits import MAX_RESUME_PAGES, MAX_RESUME_CHARS, MAX_RESUME_BYTES
 
 # --- HELPER: The Token Shredder (For OCR Fallback) ---
 def strip_ocr_metadata(data) -> list:
@@ -20,64 +21,92 @@ def strip_ocr_metadata(data) -> list:
             extracted.extend(strip_ocr_metadata(item))
     return extracted
 
-# --- STAGE 1 & 2: THE HYBRID BRIDGE & EYES ---
-def extract_text_intelligently(pdf_path: str, nvidia_key: str, page_number: int = 0) -> str:
-    """Attempts perfect digital extraction first. Falls back to DEDICATED NVIDIA OCR NIM if it's an image."""
-    print(f"📄 Bridge: Loading {pdf_path} (Page {page_number + 1})")
-    
+class ResumeExtractionError(ValueError):
+    """A resume cannot be fully extracted within the supported limits."""
+
+    def __init__(self, message: str, status_code: int = 422):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _extract_page_text(page, nvidia_key: str) -> str:
+    native_text = page.get_text("text").strip()
+    images = page.get_images()
+    if len(native_text) > 50 or (native_text and not images):
+        return native_text
+    # Empty pages need no paid OCR call. Drawings can contain outlined text.
+    if not images and not page.get_drawings():
+        return native_text
+    number = page.number + 1
+    if not nvidia_key:
+        raise ResumeExtractionError(
+            f"Resume page {number} needs OCR. Configure NVIDIA_API_KEY and retry.", 503
+        )
+
+    # Keep ordinary pages at 3x resolution, but bound large-page raster memory.
+    area = max(page.rect.width * page.rect.height, 1)
+    zoom = min(3.0, (6000000 / area) ** 0.5)
+    image = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom)).tobytes("png")
+    encoded = base64.b64encode(image).decode("ascii")
+    try:
+        response = requests.post(
+            "https://ai.api.nvidia.com/v1/infer/nvidia/nemotron-ocr-v1",
+            headers={"Authorization": f"Bearer {nvidia_key}", "Accept": "application/json", "Content-Type": "application/json"},
+            json={"input": [{"type": "image_url", "url": f"data:image/png;base64,{encoded}"}], "merge_levels": ["line"]},
+            timeout=(10, 45),
+        )
+        if response.status_code != 200:
+            raise ResumeExtractionError(
+                f"Could not read resume page {number}: OCR service returned HTTP {response.status_code}. Retry the upload.", 502
+            )
+        text = "\n".join(strip_ocr_metadata(response.json())).strip()
+    except ResumeExtractionError:
+        raise
+    except (requests.RequestException, ValueError) as error:
+        raise ResumeExtractionError(
+            f"Could not read resume page {number}: OCR service failed or timed out. Retry the upload.", 502
+        ) from error
+    if not text:
+        raise ResumeExtractionError(f"Could not read resume page {number}: OCR returned no text. Upload a clearer PDF.")
+    return text
+
+
+def extract_text_intelligently(pdf_path: str, nvidia_key: str, page_number: int | None = None) -> str:
+    """Extract all pages by default, or one explicitly selected zero-based page."""
     if not os.path.exists(pdf_path):
         raise FileNotFoundError(f"Missing file: {pdf_path}")
-        
-    with fitz.open(pdf_path) as doc:
-        page = doc.load_page(page_number)
-        
-        # Attempt 1: The Fast Lane (Native Digital Text)
-        native_text = page.get_text("text").strip()
-        
-        if len(native_text) > 50:
-            print("⚡ Bridge: Digital text detected! Skipping OCR for 100% accuracy.")
-            return native_text
-            
-        # Attempt 2: The OCR Fallback (High-Res PNG + Dedicated Infer Endpoint)
-        print("⚠️ Bridge: No digital text found. Triggering High-Res PNG conversion...")
-        
-        # THE FIX: 3.0x zoom + Lossless PNG (No more F -> P hallucinations)
-        zoom = 3.0    
-        mat = fitz.Matrix(zoom, zoom)
-        pix = page.get_pixmap(matrix=mat)
-        img_bytes = pix.tobytes("png")
-        encoded = base64.b64encode(img_bytes).decode('utf-8')
-    
-    print(f"   -> Base64 Length: {len(encoded)} characters (Bypassing 180k limit!)")
-    
-    print("⚡ Eyes: Transmitting to DEDICATED NVIDIA Nemotron-OCR-v1 API...")
-    
-    # THE FIX: Dedicated inference endpoint
-    invoke_url = "https://ai.api.nvidia.com/v1/infer/nvidia/nemotron-ocr-v1"
-    headers = {
-        "Authorization": f"Bearer {nvidia_key}",
-        "Accept": "application/json",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "input": [
-            {
-                "type": "image_url",
-                "url": f"data:image/png;base64,{encoded}"
-            }
-        ],
-        # Options: "word", "line", "paragraph"
-        "merge_levels": ["line"] 
-    }
-
-    response = requests.post(invoke_url, headers=headers, json=payload)
-    if response.status_code != 200:
-        raise Exception(f"NVIDIA API Error: {response.status_code} - {response.text}")
-        
-    text_list = strip_ocr_metadata(response.json())
-    clean_text = "\n".join(text_list)
-    print(f"   -> Groq Payload successfully shredded to ~{len(clean_text)//4} tokens.")
-    return clean_text
+    if os.path.getsize(pdf_path) > MAX_RESUME_BYTES:
+        raise ResumeExtractionError("The resume PDF must be 10 MB or smaller.", 413)
+    try:
+        with fitz.open(pdf_path) as document:
+            if not document.is_pdf:
+                raise ResumeExtractionError("Upload a valid PDF resume.")
+            if document.needs_pass:
+                raise ResumeExtractionError("Remove the PDF password before uploading the resume.")
+            if len(document) > MAX_RESUME_PAGES:
+                raise ResumeExtractionError(f"Resume PDFs can contain at most {MAX_RESUME_PAGES} pages. Upload a shorter document.", 413)
+            if page_number is not None and not 0 <= page_number < len(document):
+                raise ResumeExtractionError("The selected PDF page does not exist.")
+            pages = range(len(document)) if page_number is None else (page_number,)
+            parts = []
+            total = 0
+            for index in pages:
+                text = _extract_page_text(document.load_page(index), nvidia_key)
+                if not text:
+                    continue
+                total += len(text) + (2 if parts else 0)
+                if total > MAX_RESUME_CHARS:
+                    raise ResumeExtractionError(
+                        f"Resume text exceeds {MAX_RESUME_CHARS:,} characters. Upload a shorter document.", 413
+                    )
+                parts.append(text)
+    except ResumeExtractionError:
+        raise
+    except (RuntimeError, ValueError) as error:
+        raise ResumeExtractionError("Could not read the PDF. Upload a valid, uncorrupted resume PDF.") from error
+    if not parts:
+        raise ResumeExtractionError("The PDF has no readable resume text.")
+    return "\n\n".join(parts)
 
 
 # --- STAGE 3: THE BRAIN (Groq Dynamic JSON Structuring) ---

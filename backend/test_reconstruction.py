@@ -12,7 +12,7 @@ import main
 
 class ReconstructionTests(unittest.TestCase):
     def completion(self, payload):
-        return SimpleNamespace(choices=[SimpleNamespace(
+        return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop',
             message=SimpleNamespace(content=json.dumps(payload))
         )])
 

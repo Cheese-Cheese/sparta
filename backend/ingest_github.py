@@ -29,6 +29,19 @@ class GitHubFetchError(ValueError):
     """GitHub did not provide usable repository evidence."""
 
 
+class RepositoryEvidence(str):
+    """Text-compatible repository sample with explicit coverage metadata."""
+    def __new__(cls, text, coverage):
+        sample = super().__new__(cls, text)
+        sample.coverage = coverage
+        return sample
+
+
+def evidence_coverage(sample):
+    """Old caller-owned snapshots may contain text without coverage information."""
+    return getattr(sample, 'coverage', {'status': 'unknown' if sample else 'unavailable'})
+
+
 def fetch_repo_content(owner: str, repo: str, branch: str = None):
     """Read a bounded sample of repository text through GitHub's REST API."""
     headers = {'Accept': 'application/vnd.github+json'}
@@ -44,7 +57,10 @@ def fetch_repo_content(owner: str, repo: str, branch: str = None):
         if response.status_code != 200:
             raise GitHubFetchError(f'GitHub returned HTTP {response.status_code}. Check repository access, the branch, and API limits.')
         try:
-            return response.json()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ValueError('Expected a JSON object')
+            return payload
         except ValueError as error:
             raise GitHubFetchError('GitHub returned an unreadable response.') from error
 
@@ -58,35 +74,55 @@ def fetch_repo_content(owner: str, repo: str, branch: str = None):
 
     collected = []
     used_chars = 0
+    coverage = {'status': 'partial', 'branch': branch, 'tree_sha': tree.get('sha'),
+                'total_files': 0, 'included_files': [], 'truncated_files': [],
+                'omitted': {'directory_filter': 0, 'unsupported_type': 0, 'oversized': 0,
+                            'unreadable': 0, 'empty': 0, 'budget': 0}}
     for entry in sorted(tree.get('tree', []), key=lambda item: item.get('path', '')):
         path = entry.get('path', '')
-        if entry.get('type') != 'blob' or not entry.get('sha'):
+        if entry.get('type') != 'blob':
+            continue
+        coverage['total_files'] += 1
+        if not entry.get('sha'):
+            coverage['omitted']['unreadable'] += 1
             continue
         if any(part in IGNORED_DIRS for part in path.split('/')):
+            coverage['omitted']['directory_filter'] += 1
             continue
         if not any(path.lower().endswith(ext) for ext in LOGIC_EXTENSIONS):
+            coverage['omitted']['unsupported_type'] += 1
             continue
         if entry.get('size', 0) > 150000:
+            coverage['omitted']['oversized'] += 1
             continue
-        if len(collected) >= MAX_FILES or used_chars >= MAX_CONTEXT_CHARS:
-            break
+        header = f"\n\n--- FILE: {path} ---\n"
+        if len(collected) >= MAX_FILES or MAX_CONTEXT_CHARS - used_chars <= len(header):
+            coverage['omitted']['budget'] += 1
+            continue
         content = get_json(f"{base_url}/git/blobs/{quote(entry['sha'], safe='')}")
         if content.get('encoding') != 'base64':
+            coverage['omitted']['unreadable'] += 1
             continue
         try:
             encoded = ''.join(content.get('content', '').split())
             decoded = base64.b64decode(encoded, validate=True).decode('utf-8')
         except (ValueError, UnicodeDecodeError, binascii.Error):
+            coverage['omitted']['unreadable'] += 1
             continue
         if not decoded.strip():
+            coverage['omitted']['empty'] += 1
             continue
-        section = f"\n\n--- FILE: {path} ---\n{decoded}"
+        section = header + decoded
         remaining = MAX_CONTEXT_CHARS - used_chars
-        # Do not include a filename without any of its contents.
-        if remaining <= len(section) - len(decoded):
-            break
         collected.append(section[:remaining])
+        coverage['included_files'].append(path)
+        if len(section) > remaining:
+            coverage['truncated_files'].append(path)
         used_chars += len(collected[-1])
     if not collected:
         raise GitHubFetchError('Repository has no readable files within the supported paths and size limits.')
-    return ''.join(collected)
+    coverage['included_count'] = len(collected)
+    coverage['text_chars'] = used_chars
+    if not sum(coverage['omitted'].values()) and not coverage['truncated_files']:
+        coverage['status'] = 'complete'
+    return RepositoryEvidence(''.join(collected), coverage)

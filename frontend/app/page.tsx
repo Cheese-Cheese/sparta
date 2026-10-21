@@ -36,6 +36,7 @@ import ThemeToggle from "./components/ThemeToggle";
 import SpartaLogo from "./components/SpartaLogo";
 import TypewriterHeading from "./components/TypewriterHeading";
 import TypewriterText from "./components/TypewriterText";
+import EvidenceNotice, { type EvidenceCheck, type RepositoryCoverage } from "./components/EvidenceNotice";
 import { useSpeechRecorder } from "./hooks/useSpeechRecorder";
 
 // ─────────────────────────────────────────────────
@@ -79,6 +80,8 @@ export interface RoastData {
   job_description?: string;
   has_github?: boolean;
   github_error?: string | null;
+  repository_coverage?: RepositoryCoverage;
+  evidence_checks?: EvidenceCheck[];
 }
 
 interface ApiResponse {
@@ -494,6 +497,7 @@ function RoastDashboard({
             GitHub evidence was unavailable: {roastData.github_error} This review and interview will use resume claims only.
           </p>
         )}
+        <EvidenceNotice coverage={roastData.repository_coverage} checks={roastData.evidence_checks} hasGithub={roastData.has_github} />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-7">
           {/* ── Left Column: PDF Panel ── */}
           <div className="lg:col-span-6 lg:sticky lg:top-24 self-start">
