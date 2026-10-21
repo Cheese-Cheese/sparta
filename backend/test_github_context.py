@@ -108,14 +108,12 @@ class GitHubIngestionTests(unittest.TestCase):
 class InterviewContextTests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(main.app)
-        main.DB.clear()
         main.REPO_CACHE.clear()
         self.temp = tempfile.TemporaryDirectory()
         self.previous_directory = os.getcwd()
         os.chdir(self.temp.name)
         self.addCleanup(self.temp.cleanup)
         self.addCleanup(os.chdir, self.previous_directory)
-        self.addCleanup(main.DB.clear)
         self.addCleanup(main.REPO_CACHE.clear)
         self.keys = patch.dict(os.environ, {'NVIDIA_API_KEY': 'test-placeholder'})
         self.keys.start()
@@ -160,7 +158,7 @@ class InterviewContextTests(unittest.TestCase):
         self.assertIn(CODE, audit.call_args.args[1])
         # Simulate the browser's sessionStorage JSON round trip, then a worker restart.
         context = json.dumps(json.loads(json.dumps(data)))
-        main.DB.clear()
+        main.REPO_CACHE.clear()
         completion = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='[TOPIC: Intro] Introduce yourself.'))])
         create = Mock(return_value=completion)
         fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
@@ -207,8 +205,7 @@ class InterviewContextTests(unittest.TestCase):
         fetch.assert_not_called()
         self.assertEqual(len(main.REPO_CACHE), 1)
 
-    def test_missing_or_malformed_context_does_not_fall_back_to_shared_user(self):
-        main.DB['current_user'] = {'resume': RESUME, 'code': SOURCE}
+    def test_missing_or_malformed_context_cannot_start_an_interview(self):
         for context in ['', '{broken', '{}', '[]', json.dumps({'resume_text': RESUME, 'has_github': True})]:
             with self.subTest(context=context[:10]), patch.object(brain, 'get_chat_response') as chat:
                 result = self.client.post('/chat', json={'message': 'Answer', 'context': context})

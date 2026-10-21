@@ -481,7 +481,7 @@ def generate_interview_challenge(code_context, analysis_json):
 def generate_ats_resume(resume_text, code_context):
     prompt = f"""
     Rewrite this resume to be ATS compliant. Inject hardcore technical evidence found in the code to prove the claims.
-    RESUME: {resume_text[:3000]}
+    RESUME: {resume_text[:MAX_RESUME_CHARS]}
     CODE: {code_context[:20000]}
     """
     try:

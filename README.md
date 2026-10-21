@@ -50,11 +50,49 @@ Resume PDF + job description
 3. `/analyze` includes `resume_text`, `code`, `repo_url`, `job_description`, `has_github`, and interview metadata in its JSON result.
 4. The frontend saves that analysis in browser `sessionStorage` when the user opens the interview.
 5. The interview sends the analysis as the `context` field through `/api/interrogation` to backend `/chat`.
-6. `/chat` builds the model prompt from that request's snapshot. It does not use another upload's shared `current_user` record.
+6. `/chat` builds the model prompt from that request's snapshot. It does not read a shared last-upload record.
 
 This handoff works after an unrelated upload or a backend worker restart. Missing or outdated context produces a request to analyze the resume again.
 
 `has_github` is true only after a successful fetch supplies usable evidence. A failed fetch produces `github_error`, leaves `code` empty, and uses resume-only interview mode. Failed fetches are not cached.
+
+### Caller-owned context for legacy endpoints
+
+`/add_repo`, `/interview_start`, and `/generate_resume` now use the same request-owned snapshot approach as `/chat`. There are no shared `current_user` or `pending_resume` records. Each request supplies its own data, so interleaved uploads and different server workers cannot substitute another candidate's resume.
+
+Send the analysis object returned by `/analyze`, encoded as JSON in a `context` string:
+
+| Endpoint | JSON request fields | Result |
+| --- | --- | --- |
+| `POST /add_repo` | `github_url`, `context` | Suggested bullets and an updated `context` object. |
+| `POST /interview_start` | `context` | An opening question based on that snapshot. |
+| `POST /generate_resume` | `context` | A rewritten resume using that snapshot's resume and code. |
+| `POST /chat` | `message`, `history`, `context` | The next interview response using that snapshot. |
+
+For example, after adding a repository:
+
+```javascript
+let analysis = JSON.parse(analyzeResponse.data);
+const response = await fetch(`${backendUrl}/add_repo`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    github_url: "https://github.com/your-user/your-project",
+    context: JSON.stringify(analysis),
+  }),
+});
+if (!response.ok) throw new Error("Could not add repository evidence.");
+const added = await response.json();
+analysis = added.context;
+// Save this updated snapshot and use it for subsequent requests.
+const interviewRequest = { context: JSON.stringify(analysis) };
+```
+
+`/add_repo` retains up to 20,000 characters from the added repository. It places new evidence first within the combined 50,000-character code budget and reports `context_truncated` when it trims evidence. The caller must save the returned snapshot; adding a repository does not change other snapshots or rerun the original audit scores.
+
+`/extract_projects` returns its extracted `resume_text` directly instead of storing a pending resume on the server. The bounded repository cache remains an optional performance cache; it contains repository samples, not candidate resume or interview records.
+
+**API migration:** Older legacy requests without `context` must be updated. Missing, malformed, or oversized snapshots return HTTP errors before repository fetching or model calls. These endpoints have no current frontend callers; the main frontend interview continues to use `/chat`.
 
 ### GitHub coverage and limits
 
@@ -176,12 +214,14 @@ The deterministic tests below use generated fixtures and mocked service response
 From `backend/`, with its environment activated:
 
 ```bash
-python -m unittest -v test_pdf_extraction test_github_context test_reconstruction test_resume_pdf
+python -m unittest -v test_analysis_isolation test_pdf_extraction test_github_context test_reconstruction test_resume_pdf
 ```
 
 `test_github_context.py` checks public access, authenticated requests, branch selection, file filters, HTTP failures, timeouts, cache behavior, and missing evidence. It follows an analysis result into the real interview prompt and checks that another upload cannot replace its evidence.
 
 `test_pdf_extraction.py` uses generated PDFs to check all 20 pages, mixed digital/scanned content, short and empty pages, limits, OCR failures, and invalid documents. It verifies that a later-page GitHub URL and text beyond the old prompt limits reach analysis and interview context.
+
+`test_analysis_isolation.py` interleaves candidate uploads and legacy endpoint calls. It checks independent snapshots, repository updates, cache reuse, missing-context errors, bounds, worker-independent requests, and later-page resume generation.
 
 The other two suites check reconstruction responses and targeted PDF replacements, including page preservation and rejection of ambiguous matches.
 
@@ -203,6 +243,7 @@ Mocked tests establish the application contract. They do not measure model quali
 ```text
 backend/
   main.py                    FastAPI routes and analysis/interview handoff
+  analysis_context.py        Shared validation for caller-owned snapshots
   brain.py                   Groq prompts, scoring, and interview progression
   ingest_github.py            GitHub tree and blob ingestion
   pipeline.py                 Native PDF extraction and NVIDIA OCR fallback
@@ -213,6 +254,7 @@ backend/
   test_reconstruction.py     Reconstruction response tests
   test_resume_pdf.py         PDF replacement tests
   test_pdf_extraction.py     Multi-page extraction and analysis tests
+  test_analysis_isolation.py Candidate isolation and legacy endpoint tests
 frontend/
   app/page.tsx               Upload, dashboard, and reconstruction screens
   app/interrogation/page.tsx Voice interview and feedback
@@ -229,7 +271,7 @@ render.yaml                  Render service configuration
 
 - Resume PDF support is bounded to 20 pages, 10 MB, and 60,000 extracted characters. Larger documents are rejected rather than partly analyzed.
 - Interview evidence lives in the browser's analysis snapshot. Source text therefore reaches the browser and session storage.
-- Some legacy endpoints, including `/add_repo`, `/interview_start`, and `/generate_resume`, still use shared process memory. The main `/chat` handoff does not.
+- Analysis and interview context is caller-owned. Clients must retain snapshots and send them with each request; the backend does not restore the last upload from process memory.
 - Repository contents and model responses can be incomplete or incorrect. Review suggestions before using them.
 - PDF replacements need a unique original match and enough space. They can be rejected when a replacement cannot fit. Exact source-font matching is not guaranteed.
 
@@ -241,6 +283,6 @@ These items are planned, not implemented:
 - [ ] **JEV follow-up evaluation:** Define JEV's provider/model or evaluation contract, then compare it with the current light-model classifier before replacing it. Add classification and interview-progression regression tests.
 - [ ] **Broader repository evidence:** Support multiple project URLs, explicit repository selection, full-tree pagination, commit history, and evidence citations.
 - [ ] **PDF improvements:** Collect embedded repository links, improve font preservation, and preview replacements before download. Multi-page extraction is implemented within the documented limits.
-- [ ] **Session storage:** Replace remaining shared legacy state with isolated, persistent analysis/interview sessions and expiry controls.
+- [ ] **Persistent sessions:** Add authenticated server-side storage, expiry controls, and cross-device recovery for the current caller-owned snapshots. Shared legacy resume state has been removed.
 - [ ] **Speech access:** Replace browser delivery of the configured Deepgram key with scoped temporary access or a server-mediated speech connection.
 - [ ] **Evaluation and CI:** Add optional live integration checks, model-quality datasets, and automated checks in continuous integration.

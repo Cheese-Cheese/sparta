@@ -143,9 +143,7 @@ class AnalyzeMultipageTests(unittest.TestCase):
         network = patch.object(pipeline.requests, 'post', side_effect=AssertionError('Unexpected live OCR request'))
         network.start()
         self.addCleanup(network.stop)
-        main.DB.clear()
         main.REPO_CACHE.clear()
-        self.addCleanup(main.DB.clear)
         self.addCleanup(main.REPO_CACHE.clear)
 
     def test_last_page_reaches_audit_github_detection_and_interview(self):
@@ -171,7 +169,7 @@ class AnalyzeMultipageTests(unittest.TestCase):
         self.assertIn('FINAL_PAGE_EVIDENCE', create.call_args.kwargs['messages'][0]['content'])
         github.assert_called_once_with('reader', 'orders', None)
         ocr.assert_not_called()
-        main.DB.clear()
+        main.REPO_CACHE.clear()
         with patch.object(brain, 'get_chat_response', return_value='Question') as chat:
             result = self.client.post('/chat', json={'message': 'Start', 'context': json.dumps(data)})
         self.assertEqual(result.status_code, 200)
