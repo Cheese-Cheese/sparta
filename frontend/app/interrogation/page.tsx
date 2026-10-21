@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import ThemeToggle from "../components/ThemeToggle";
 import SpartaLogo from "../components/SpartaLogo";
 import { useSpeechRecorder } from "../hooks/useSpeechRecorder";
+import { requestInterviewReport, type InterviewReport } from "../lib/interview-report";
 
 export default function InterrogationPage() {
   const router = useRouter();
@@ -45,7 +46,9 @@ export default function InterrogationPage() {
 
   // Report state
   const [rebuildBullets, setRebuildBullets] = useState<{ original: string; enhanced: string }[]>([]);
-  const [defenseReport, setDefenseReport] = useState<any>(null);
+  const [defenseReport, setDefenseReport] = useState<InterviewReport | null>(null);
+  const [reportError, setReportError] = useState("");
+  const reportTranscript = useRef("");
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [showTranscriptModal, setShowTranscriptModal] = useState(false);
@@ -302,6 +305,21 @@ export default function InterrogationPage() {
       console.error("Failed to copy transcript:", err);
     });
   };
+  const generateReport = async (spokenTranscript: string) => {
+    setIsGeneratingReport(true);
+    setReportError("");
+    setDefenseReport(null);
+    setRebuildBullets([]);
+    try {
+      const report = await requestInterviewReport(rawResumeText, spokenTranscript, JSON.stringify(roastData || {}));
+      setDefenseReport(report);
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : "Interview feedback failed. Please retry.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
   const handleFinishInterrogation = async () => {
     if (isInterrogationEndedRef.current) return;
     // Set flag first to block all in-flight async TTS play calls
@@ -320,30 +338,14 @@ export default function InterrogationPage() {
     setIsAiSpeaking(false);
     const finalAnswer = await finishRecording();
 
-    setIsGeneratingReport(true);
     setShowReport(true);
 
     const fullVoiceTranscript = [...chatHistory, ...(finalAnswer ? [{ type: "user", text: finalAnswer }] : [])]
       .map((h) => `${h.type === "user" ? "Candidate" : "Agent"}: ${h.text}`)
       .join("\n");
 
-    try {
-      const res = await fetch("/api/rebuild", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          resumeText: rawResumeText || "Worked on backend APIs and system infrastructure.",
-          spokenTranscript: fullVoiceTranscript || userTranscript || "",
-          context: JSON.stringify(roastData || {}),
-        }),
-      });
-      const data = await res.json();
-      setRebuildBullets(data.bullets || []);
-      setDefenseReport(data);
-    } catch (e) {
-      console.error("Error generating report bullets:", e);
-    }
-    setIsGeneratingReport(false);
+    reportTranscript.current = fullVoiceTranscript || userTranscript || "";
+    await generateReport(reportTranscript.current);
   };
 
   useEffect(() => {
@@ -568,6 +570,15 @@ export default function InterrogationPage() {
         ) : (
           /* Post-Interrogation Battle Report View */
           <div className="space-y-6 animate-[fadeIn_0.5s_ease_forwards]">
+            {reportError && (
+              <div role="alert" className="border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
+                <p>{reportError} No score or suggestions were produced. Your transcript is retained for retry.</p>
+                <button type="button" onClick={() => generateReport(reportTranscript.current)} disabled={isGeneratingReport}
+                  className="mt-3 border border-line bg-surface px-4 py-2 text-ink cursor-pointer disabled:opacity-50">
+                  Retry feedback
+                </button>
+              </div>
+            )}
             {/* Header Score Card */}
             <div className="review-score bg-surface border border-line rounded-2xl p-8 flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="space-y-3">
@@ -611,7 +622,7 @@ export default function InterrogationPage() {
                     {isGeneratingReport ? (
                       <Loader2 className="animate-spin inline-block mr-2" size={32} />
                     ) : (
-                      `${defenseReport?.overall_defense_score ?? 0}/100`
+                      defenseReport ? `${defenseReport.overall_defense_score}/100` : "Unavailable"
                     )}
                   </span>
                 </div>
@@ -678,7 +689,7 @@ export default function InterrogationPage() {
             )}
 
             {/* Phase 2: Corrections / Additions */}
-            <div className="bg-surface border border-line rounded-2xl p-8 space-y-6">
+            {!reportError && <div className="bg-surface border border-line rounded-2xl p-8 space-y-6">
               <div className="flex items-center gap-3">
                 <Wrench className="text-ink" size={22} />
                 <h3 className="text-xl font-bold text-ink">Resume suggestions</h3>
@@ -723,7 +734,7 @@ export default function InterrogationPage() {
                   ))}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Back Button */}
             <div className="flex justify-center pt-4">

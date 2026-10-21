@@ -11,6 +11,7 @@ import requests
 from fastapi.testclient import TestClient
 
 import brain
+from test_fixtures import audit_fixture
 import ingest_github
 import main
 
@@ -18,10 +19,7 @@ import main
 CODE = 'def total(items):\n    return sum(item.price for item in items)\n'
 SOURCE = f'\n\n--- FILE: src/orders.py ---\n{CODE}'
 RESUME = 'Experience: built an order API. Skills: Python. ' + 'Resume detail. ' * 100 + 'TAIL_EVIDENCE'
-AUDIT = {'sections': {}, 'interview_metadata': {
-    'target_seniority': 'Backend Engineer', 'phase1_domains': ['Order API', 'Python'],
-    'phase2_domains': ['Redis'], 'ruthlessness_modifier': 'Ask for implementation details.',
-}}
+AUDIT = audit_fixture()
 
 
 def response(payload, status=200):
@@ -159,7 +157,7 @@ class InterviewContextTests(unittest.TestCase):
         # Simulate the browser's sessionStorage JSON round trip, then a worker restart.
         context = json.dumps(json.loads(json.dumps(data)))
         main.REPO_CACHE.clear()
-        completion = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='[TOPIC: Intro] Introduce yourself.'))])
+        completion = SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content='[TOPIC: Intro] Introduce yourself.'))])
         create = Mock(return_value=completion)
         fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         with patch.object(brain, 'groq_client', fake_client):

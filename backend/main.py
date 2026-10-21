@@ -20,7 +20,7 @@ from collections import OrderedDict
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import List, Literal, Optional
 from dotenv import load_dotenv
@@ -66,6 +66,7 @@ from pipeline import extract_text_intelligently, analyze_with_groq, ResumeExtrac
 from resume_limits import MAX_RESUME_BYTES, MAX_RESUME_CHARS
 from analysis_context import parse_analysis_context, MAX_CODE_CONTEXT_CHARS
 from resume_pdf import replace_resume_bullets
+from model_output import ModelOutputError, validate_audit
 
 load_dotenv()
 
@@ -74,6 +75,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+
+@app.exception_handler(ModelOutputError)
+async def model_output_error_handler(request, error):
+    return JSONResponse(status_code=502, content={'detail': str(error)})
 
 app.add_middleware(
     CORSMiddleware,
@@ -437,7 +443,7 @@ async def analyze_portfolio(
         if target_url:
             print(f"   🎯 Using selected project URL: {target_url}")
         else:
-            print(f"   ⚠️ No GitHub URL provided - analyzing resume claims only (PHANTOMWARE CHECK)")
+            print(f"   ⚠️ No GitHub URL provided - analyzing unverified resume claims only")
 
         code_context = ""
         github_error = None
@@ -465,25 +471,14 @@ async def analyze_portfolio(
             code_context = 'NO CODE PROVIDED. Repository evidence is unavailable. Evaluate resume claims without claiming code verification.'
 
         analysis_json = brain.analyze_resume_vs_code(resume_text, code_context, project_name, job_description)
-        
-        import json
-        try:
-            data = json.loads(analysis_json)
-            data["resume_text"] = resume_text
-            data["has_github"] = has_github
-            data["code"] = code_context[:50000] if has_github else ""
-            data["repo_url"] = target_url if has_github else None
-            data["job_description"] = job_description
-            data["github_error"] = github_error
-            analysis_json = json.dumps(data)
-            
-            critique = "\n".join([f"- {x}" for x in data.get("project_critique", [])])
-            claims = "\n".join([f"- {x}" for x in data.get("false_claims", [])])
-            suggestions = "\n".join([f"- {x}" for x in data.get("resume_suggestions", [])])
-            
-            chat_msg = f"**REAL WORLD CRITIQUE:**\n{critique}\n\n**FALSE CLAIMS / VERIFICATION:**\n{claims}\n\n**RESUME ADDITIONS:**\n{suggestions}"
-        except:
-            chat_msg = "Analysis Complete. Check Dashboard for details."
+        data = validate_audit(analysis_json, code_context if has_github else '')
+        data.update(resume_text=resume_text, has_github=has_github,
+                    code=str(code_context[:50000]) if has_github else '',
+                    repo_url=target_url if has_github else None, job_description=job_description,
+                    github_error=github_error,
+                    repository_coverage=ingest_github.evidence_coverage(code_context if has_github else ''))
+        analysis_json = json.dumps(data)
+        chat_msg = 'Analysis ready. Review the feedback and source quotes before using suggestions.'
 
         return {
             "status": "success",
@@ -492,6 +487,8 @@ async def analyze_portfolio(
         }
 
     except HTTPException:
+        raise
+    except ModelOutputError:
         raise
     except ResumeExtractionError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
@@ -538,6 +535,13 @@ async def add_repo_context(request: RepoRequest):
         context['has_github'] = True
         context['repo_url'] = request.github_url
         context['github_error'] = None
+        # Old and new samples may be trimmed here; do not retain stale audit citations.
+        context['evidence_checks'] = []
+        context['repository_coverage'] = {
+            'status': 'partial', 'reason': 'Combined repository context; original audit was not rerun.',
+            'added_repository': ingest_github.evidence_coverage(code_context),
+            'context_truncated': len(code_context) > 20000 or len(combined) > MAX_CODE_CONTEXT_CHARS,
+        }
 
         return {"status": "success", "bullets": bullets, "context": context,
                 "context_truncated": len(code_context) > 20000 or len(combined) > MAX_CODE_CONTEXT_CHARS}
@@ -566,6 +570,7 @@ async def chat_endpoint(request: ChatRequest):
         f"--- RESUME ---\n{context['resume_text'][:MAX_RESUME_CHARS]}\n"
         f"--- JOB DESCRIPTION ---\n{job_description[:12000]}\n"
         f"--- REPOSITORY ---\n{context.get('repo_url') or 'None'}\n"
+        f"--- EVIDENCE COVERAGE ---\n{json.dumps(context.get('repository_coverage', {'status': 'unknown'}))}\n"
         f"--- CODE EVIDENCE ---\n{code[:50000] or 'NO CODE PROVIDED. Interview from resume claims only.'}"
     )
 

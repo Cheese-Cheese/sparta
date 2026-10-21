@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 import brain
+from test_fixtures import audit_fixture
 import ingest_github
 import main
 from analysis_context import MAX_CODE_CONTEXT_CHARS
@@ -43,7 +44,7 @@ class AnalysisIsolationTests(unittest.TestCase):
             data = snapshot(candidate)
             with patch.object(main, 'extract_text_intelligently', return_value=data['resume_text']), patch.object(
                 brain, 'validate_is_resume', return_value=(True, '')
-            ), patch.object(brain, 'analyze_resume_vs_code', return_value=json.dumps({'sections': {}})), patch.object(
+            ), patch.object(brain, 'analyze_resume_vs_code', return_value=json.dumps(audit_fixture())), patch.object(
                 ingest_github, 'fetch_repo_content', return_value=data['code']
             ):
                 result = self.client.post('/analyze', files={'file': ('resume.pdf', b'fixture', 'application/pdf')},
@@ -201,7 +202,7 @@ class AnalysisIsolationTests(unittest.TestCase):
     def test_generate_resume_prompt_keeps_later_resume_content(self):
         data = snapshot('alice')
         data['resume_text'] += 'Earlier details. ' * 900 + 'LATER_PAGE_EVIDENCE'
-        completion = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='Rewritten resume'))])
+        completion = SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content='Rewritten resume'))])
         create = Mock(return_value=completion)
         client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         with patch.object(brain, 'groq_client', client):

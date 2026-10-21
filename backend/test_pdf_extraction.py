@@ -12,6 +12,7 @@ import requests
 from fastapi.testclient import TestClient
 
 import brain
+from test_fixtures import audit_fixture
 import ingest_github
 import main
 import pipeline
@@ -152,9 +153,7 @@ class AnalyzeMultipageTests(unittest.TestCase):
         last = 'FINAL_PAGE_EVIDENCE: queue workers at scale.\nhttps://github.com/reader/orders'
         document = pdf_bytes(texts + [last])
         def completion(**kwargs):
-            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps({
-                'sections': {'skills': {'score': 80}}, 'interview_metadata': {'target_seniority': 'Engineer'},
-            })))])
+            return SimpleNamespace(choices=[SimpleNamespace(finish_reason='stop', message=SimpleNamespace(content=json.dumps(audit_fixture())))])
         create = Mock(side_effect=completion)
         fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create)))
         with patch.dict(os.environ, {'NVIDIA_API_KEY': ''}), patch.object(
